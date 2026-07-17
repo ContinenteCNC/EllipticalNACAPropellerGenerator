@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.0.0
+
+First public stable release.
+
+- Promoted the fully tested v0.21.0 implementation to v1.0.0.
+- No intended change to propeller mathematics, geometry, parameters, or JSON
+  keys relative to the tested v0.21.0 build.
+- Generates complete propellers in the currently active Fusion component.
+- Creates wrapped section paths with the owning component context, including
+  nested child components.
+- Organizes each successful parametric run in a collapsed, sequential timeline
+  group after the Fusion command transaction is committed.
+- Supports automatic radial section distribution by spacing or slice count,
+  plus manual section radii.
+- Includes root, mid, and tip NACA profiles, sweep, hub, shaft hole, tip-ring
+  alternatives, and parabolic or rounded-ogive spinner alternatives.
+- Saves validated parameters automatically and restores immutable factory
+  defaults on request.
+- Provides a localized interface in Portuguese, English, Spanish, French,
+  German, and Russian.
+- Includes public documentation, source attribution, licensing notices,
+  release notes, and a post-1.0 roadmap.
+
 ## 0.21.0
 
 - Adjusted and reorganized the command interface while keeping the established

@@ -7,7 +7,7 @@ Add-in multilíngue para Autodesk Fusion que gera hélices paramétricas
 completas, com planta elíptica e transições suaves entre aerofólios NACA de
 quatro dígitos.
 
-Versão atual: **v0.21.0**
+Versão atual: **v1.0.0**
 
 ## Recursos
 
@@ -92,6 +92,7 @@ confirmados.
 - `docs/GEOMETRY.md`: fórmulas e convenções de coordenadas.
 - `docs/FUSION_API_PIPELINE.md`: sequência de construção B-Rep.
 - `docs/LLM_CONTEXT.md`: contexto compacto para manutenção humana ou por LLM.
+- `docs/ROADMAP.md`: desenvolvimento planejado após a v1.0.
 
 ## Licenciamento
 
@@ -194,3 +195,18 @@ pertencentes a componentes filhos aninhados.
 Quando uma rodada com falha confirma apenas um item na linha do tempo, o add-in
 não tenta criar um grupo padrão, pois o Fusion exige pelo menos dois itens. A
 mensagem final informa essa condição sem gerar um segundo traceback.
+
+## Versão 1.0
+
+A versão 1.0 é a primeira versão pública estável. Ela promove a base v0.21
+completamente testada sem alterar a matemática da hélice nem a geometria
+pretendida.
+
+A versão inclui geração no componente ativo, grupos da linha do tempo após a
+transação, persistência automática dos parâmetros, restauração dos padrões
+originais, interface multilíngue, alternativas de anel de ponta e alternativas
+de spinner.
+
+Consulte [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md) para as
+notas da versão e [docs/ROADMAP.md](docs/ROADMAP.md) para o desenvolvimento
+planejado.

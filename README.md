@@ -7,7 +7,7 @@ A multilingual Autodesk Fusion add-in for generating complete parametric
 propellers with elliptical blade planforms and smoothly transitioning NACA
 4-digit airfoils.
 
-Current release: **v0.21.0**
+Current release: **v1.0.0**
 
 ## Features
 
@@ -21,8 +21,8 @@ Current release: **v0.21.0**
 - Native Fusion surface loft, exact radial trims and stitched B-Rep solid.
 - Hub, shaft hole, rectangular hoop, aerodynamic NACA ring, and optional parabolic or ogive spinner.
 - Portuguese, English, Spanish, French, German and Russian interface.
-- Save-current-parameters button backed by an atomic JSON write.
-- Compact dialog using collapsible groups.
+- Automatic persistence of validated parameters, with immutable factory defaults.
+- Compact dialog using collapsible groups and per-run timeline organization.
 
 ## Installation
 
@@ -92,6 +92,7 @@ were separately confirmed.
 - `docs/GEOMETRY.md`: equations and coordinate conventions.
 - `docs/FUSION_API_PIPELINE.md`: B-Rep construction sequence.
 - `docs/LLM_CONTEXT.md`: compact maintainer context for humans and LLMs.
+- `docs/ROADMAP.md`: planned post-1.0 development.
 
 ## Licensing
 
@@ -194,3 +195,16 @@ Wrapped section paths are created with the active component's
 If a failed run commits only one timeline item, no standard timeline group is
 attempted because Fusion requires at least two items. The final message reports
 that condition without an additional API traceback.
+
+## Version 1.0
+
+Version 1.0 is the first public stable release. It promotes the fully tested
+v0.21 codebase without changing the propeller mathematics or intended
+geometry.
+
+The release includes active-component generation, post-transaction timeline
+groups, automatic parameter persistence, factory-default restoration,
+multilingual controls, tip-ring alternatives, and spinner alternatives.
+
+See [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md) for the
+release notes and [docs/ROADMAP.md](docs/ROADMAP.md) for planned development.

@@ -3,7 +3,7 @@
 ## Project identity
 
 - Name: Elliptical NACA Propeller Generator
-- Version: 0.21.0
+- Version: 1.0.0
 - Previous development name: `PropellerFlatSections`
 - Fusion add-in UUID: `e9d0f388-6b7d-4fb7-88fb-cdbba6743fd6`
 - Maintainer: Bruno Martins
@@ -206,7 +206,7 @@ group from the global `UserInterface.commandTerminated` handler. Only after
 that should the result message be displayed. Every unavailable or failed
 grouping path must be reported; never return silently.
 
-The visible command name is `<localized name> — v0.21.0`.
+The visible command name is `<localized name> — v1.0.0`.
 
 For timeline grouping, never use truthiness checks on `Design`, `Timeline`, or `TimelineGroup`. Use explicit `is None` and `isValid` checks so a valid empty timeline is not mistaken for a missing one.
 
@@ -224,3 +224,15 @@ an active child component retain their owning component context.
 
 Before calling `TimelineGroups.add`, require at least two newly committed
 timeline items. A single partial sketch cannot form a standard timeline group.
+
+
+## Version 1.0 release status
+
+Version 1.0.0 is a release-only promotion of the Fusion-tested v0.21.0
+implementation. It must not contain intentional geometry or parameter changes.
+
+The next planned feature lines are documented in `docs/ROADMAP.md`:
+
+- v1.1: adaptive radial section distribution based on normalized geometric
+  variation and bounded minimum/maximum spacing;
+- v1.2: a sample-configuration library and GUI loader.
