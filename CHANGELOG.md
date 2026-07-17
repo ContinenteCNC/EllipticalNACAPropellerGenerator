@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.21.0
+
+- Adjusted and reorganized the command interface while keeping the established
+  460 × 620 px default and 360 × 400 px minimum dimensions.
+- Combined tip-ring and spinner alternatives under mutually exclusive type
+  selectors.
+- Renamed the native **OK** button to **Generate** in all six languages.
+- Split configuration into immutable `propeller_defaults.json` and an external
+  per-user `propeller_user_config.json`.
+- Automatically saves every validated parameter when **Generate** is pressed,
+  before B-Rep construction begins.
+- Replaced the manual Save Defaults action with **Restore factory defaults**.
+- Restoring defaults updates every dialog input and removes current and legacy
+  user overrides without generating geometry.
+- Added migration support for legacy `propeller_config.json` files.
+- Preserved the existing JSON parameter keys and geometry pipeline.
+  marker is not at the end.
+- Defers timeline grouping to the global `commandTerminated` event so the
+  command transaction is committed before timeline indices are inspected.
+- Delays the final result dialog until grouping completes and explicitly
+  reports every success, failure, and intentional skip path.
+- Creates collapsed sequential groups for committed runs and marks committed
+  partial runs with `(incomplete)`.
+- Displays `v0.21.0` in the visible localized command name.
+- Fixed first-run timeline detection: a valid timeline with zero existing items is no longer mistaken for an unavailable timeline.
+- Creates all geometry in Fusion's currently active component instead of always using the root component, and reports the target component in the result dialog.
+- Creates wrapped-section Paths through the active component's `Features.createPath` collection, preserving nested-component context.
+- Avoids calling `TimelineGroups.add` for a one-item partial run and reports the minimum-two-items condition explicitly.
+
 ## 0.20.0
 
 - Added a native revolved aerodynamic ring based on the original

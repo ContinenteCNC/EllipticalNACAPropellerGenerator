@@ -5,3 +5,6 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+propeller_user_config.json
+propeller_config.json

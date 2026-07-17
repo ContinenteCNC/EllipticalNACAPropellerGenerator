@@ -87,7 +87,7 @@ release procedure and known API pitfalls.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import adsk.core
 import adsk.fusion
@@ -95,6 +95,7 @@ import json
 import math
 import os
 import re
+import sys
 import traceback
 
 try:
@@ -127,13 +128,66 @@ APP = adsk.core.Application.get()
 UI = APP.userInterface
 
 BASE_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-CONFIG_FILENAME = "propeller_config.json"
-_LOCALIZER = create_localizer(APP, BASE_DIRECTORY, CONFIG_FILENAME)
+
+DEFAULT_CONFIG_FILENAME = "propeller_defaults.json"
+USER_CONFIG_FILENAME = "propeller_user_config.json"
+LEGACY_CONFIG_FILENAME = "propeller_config.json"
+
+DEFAULT_CONFIG_PATH = os.path.join(
+    BASE_DIRECTORY,
+    DEFAULT_CONFIG_FILENAME,
+)
+LEGACY_CONFIG_PATH = os.path.join(
+    BASE_DIRECTORY,
+    LEGACY_CONFIG_FILENAME,
+)
+
+
+def _platform_user_config_directory() -> str:
+    """Return a stable per-user folder outside the add-in installation."""
+    if sys.platform.startswith("win"):
+        root = os.environ.get(
+            "APPDATA",
+            os.path.expanduser("~"),
+        )
+    elif sys.platform == "darwin":
+        root = os.path.join(
+            os.path.expanduser("~"),
+            "Library",
+            "Application Support",
+        )
+    else:
+        root = os.environ.get(
+            "XDG_CONFIG_HOME",
+            os.path.join(os.path.expanduser("~"), ".config"),
+        )
+
+    return os.path.join(
+        root,
+        "EllipticalNACAPropellerGenerator",
+    )
+
+
+USER_CONFIG_DIRECTORY = _platform_user_config_directory()
+USER_CONFIG_PATH = os.path.join(
+    USER_CONFIG_DIRECTORY,
+    USER_CONFIG_FILENAME,
+)
+
+_LOCALIZER = create_localizer(
+    APP,
+    BASE_DIRECTORY,
+    (
+        USER_CONFIG_PATH,
+        LEGACY_CONFIG_PATH,
+        DEFAULT_CONFIG_PATH,
+    ),
+)
 _t = _LOCALIZER.text
 ACTIVE_LOCALE = _LOCALIZER.locale_code
 
 PROJECT_NAME = "Elliptical NACA Propeller Generator"
-PROJECT_VERSION = "0.20.0"
+PROJECT_VERSION = "0.21.0"
 UPSTREAM_SOURCES = {
     "thingiverse": "https://www.thingiverse.com/thing:5300828",
     "printables": (
@@ -147,43 +201,93 @@ UPSTREAM_SOURCES = {
 }
 
 CMD_ID = "bruno_elliptical_naca_propeller_generator_command"
-CMD_NAME = _t("command.name")
+CMD_NAME = f"{_t('command.name')} — v{PROJECT_VERSION}"
 CMD_DESCRIPTION = _t("command.description")
 WORKSPACE_ID = "FusionSolidEnvironment"
 PANEL_IDS = ("SolidCreatePanel", "SolidScriptsAddinsPanel")
 
-# Intentionally compact dialog. The previous 980 px initial / 820 px minimum
-# width was excessive on ordinary displays. Progressive-disclosure groups make
-# a narrow vertical dialog usable, while users can still enlarge it manually.
-DIALOG_INITIAL_WIDTH = 360
-DIALOG_INITIAL_HEIGHT = 900
-DIALOG_MINIMUM_WIDTH = 300
-DIALOG_MINIMUM_HEIGHT = 720
+# Intentionally moderate default dialog size. The 460 px width reduces label
+# truncation and the 620 px height keeps the native Generate and Cancel buttons
+# visible on ordinary 1080p displays. Fusion may remember later user resizing,
+# which is desirable once a safe initial size has been established.
+DIALOG_INITIAL_WIDTH = 460
+DIALOG_INITIAL_HEIGHT = 620
+DIALOG_MINIMUM_WIDTH = 360
+DIALOG_MINIMUM_HEIGHT = 400
 
 _handlers: list[object] = []
 _control = None
+
+# One Fusion command can be active at a time. A successful execute handler
+# stores its result here so timeline grouping and the final message occur only
+# after UserInterface.commandTerminated fires and the transaction is committed.
+_pending_timeline_run = None
 
 
 # =============================================================================
 # CONFIGURATION, LOCALIZATION AND COMMAND-INPUT HELPERS
 #
 # Functions in this block are deliberately small and side-effect free except
-# for reading propeller_config.json. GUI lengths cross the Fusion API boundary
+# for layered factory/user JSON loading. GUI lengths cross the Fusion API boundary
 # here and are immediately converted from internal centimetres to millimetres.
 # =============================================================================
 
 
-def _config_path() -> str:
-    return os.path.join(BASE_DIRECTORY, CONFIG_FILENAME)
+def _read_config_object(path: str, description: str) -> dict:
+    with open(path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"O arquivo {description} deve conter um objeto JSON."
+        )
+    return data
+
+
+def _load_factory_config() -> dict:
+    """Load the immutable defaults distributed with the add-in."""
+    return _read_config_object(
+        DEFAULT_CONFIG_PATH,
+        DEFAULT_CONFIG_FILENAME,
+    )
 
 
 def _load_raw_config() -> dict:
-    path = _config_path()
-    with open(path, "r", encoding="utf-8") as file:
-        data = json.load(file)
-    if not isinstance(data, dict):
-        raise ValueError("O arquivo propeller_config.json deve conter um objeto JSON.")
-    return data
+    """Load factory defaults overlaid by user or legacy configuration."""
+    config = _load_factory_config()
+
+    # The per-user file is authoritative. The legacy in-package file is read
+    # only when updating from versions that predate split configuration.
+    overlay_path = None
+    if os.path.isfile(USER_CONFIG_PATH):
+        overlay_path = USER_CONFIG_PATH
+    elif os.path.isfile(LEGACY_CONFIG_PATH):
+        overlay_path = LEGACY_CONFIG_PATH
+
+    if overlay_path:
+        try:
+            config.update(
+                _read_config_object(
+                    overlay_path,
+                    os.path.basename(overlay_path),
+                )
+            )
+        except Exception:
+            # Atomic writes make corruption unlikely. A malformed externally
+            # edited user file must not prevent the command from opening.
+            pass
+
+    return config
+
+
+def _delete_user_configuration() -> None:
+    """Remove current and legacy user overrides."""
+    for path in (USER_CONFIG_PATH, LEGACY_CONFIG_PATH):
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except FileNotFoundError:
+            pass
 
 
 def _parse_radii(text: str) -> list[float]:
@@ -338,16 +442,23 @@ def _collect_final_assembly_parameters(
     hole_diameter_mm = _value_input_mm(inputs, "holeDiameter")
     prop_z_offset_mm = _value_input_mm(inputs, "propZOffset")
 
-    create_hoop = bool(
-        _required_command_input(inputs, "createHoop").value
+    create_tip_ring = bool(
+        _required_command_input(inputs, "createTipRing").value
     )
+    tip_ring_type = _selected_dropdown_name(inputs, "tipRingType")
+    create_hoop = (
+        create_tip_ring
+        and tip_ring_type == TIP_RING_TYPE_RECTANGULAR
+    )
+    create_airfoil_ring = (
+        create_tip_ring
+        and tip_ring_type == TIP_RING_TYPE_AERODYNAMIC
+    )
+
     hoop_thickness_mm = _value_input_mm(inputs, "hoopThickness")
     hoop_height_mm = _value_input_mm(inputs, "hoopHeight")
     hoop_offset_mm = _value_input_mm(inputs, "hoopOffset")
 
-    create_airfoil_ring = bool(
-        _required_command_input(inputs, "createAirfoilRing").value
-    )
     airfoil_ring_naca = _string_input_value(
         inputs,
         "airfoilRingNaca",
@@ -375,15 +486,21 @@ def _collect_final_assembly_parameters(
         ).value
     )
 
-    create_parabolic_spinner = bool(
-        _required_command_input(inputs, "createParabolicSpinner").value
+    create_spinner = bool(
+        _required_command_input(inputs, "createSpinner").value
     )
+    spinner_type = _selected_dropdown_name(inputs, "spinnerType")
+    create_parabolic_spinner = (
+        create_spinner
+        and spinner_type == SPINNER_TYPE_PARABOLIC
+    )
+    create_ogive_spinner = (
+        create_spinner
+        and spinner_type == SPINNER_TYPE_OGIVE
+    )
+
     spinner_diameter_mm = _value_input_mm(inputs, "spinnerDiameter")
     spinner_length_mm = _value_input_mm(inputs, "spinnerLength")
-
-    create_ogive_spinner = bool(
-        _required_command_input(inputs, "createOgiveSpinner").value
-    )
     ogive_spinner_diameter_mm = _value_input_mm(
         inputs,
         "ogiveSpinnerDiameter",
@@ -512,9 +629,10 @@ def _collect_final_assembly_parameters(
 # =============================================================================
 # PERSISTED PRESETS AND DIALOG STATE
 #
-# The Save button serializes every visible parameter back to the JSON file.
-# Interface_Language is intentionally preserved because localization must be
-# selected before the command dialog exists.
+# Generate serializes every validated visible parameter to the per-user JSON
+# before geometry construction. Factory defaults remain immutable and can be
+# restored from the button at the top of the dialog. Interface_Language is
+# preserved because localization is selected before the dialog exists.
 # =============================================================================
 
 
@@ -666,10 +784,10 @@ def _collect_current_config(
     return config
 
 
-def _write_config_atomically(config: dict) -> None:
-    """Substitui o JSON somente depois que o novo arquivo foi escrito."""
-    path = _config_path()
-    temporary_path = path + ".tmp"
+def _write_user_config_atomically(config: dict) -> None:
+    """Replace the user JSON only after the complete file is durable."""
+    os.makedirs(USER_CONFIG_DIRECTORY, exist_ok=True)
+    temporary_path = USER_CONFIG_PATH + ".tmp"
 
     try:
         with open(temporary_path, "w", encoding="utf-8") as file:
@@ -683,7 +801,7 @@ def _write_config_atomically(config: dict) -> None:
             file.flush()
             os.fsync(file.fileno())
 
-        os.replace(temporary_path, path)
+        os.replace(temporary_path, USER_CONFIG_PATH)
     except Exception:
         try:
             if os.path.exists(temporary_path):
@@ -697,12 +815,18 @@ def _save_current_config(
     inputs: adsk.core.CommandInputs,
 ) -> None:
     config = _collect_current_config(inputs)
-    _write_config_atomically(config)
+    _write_user_config_atomically(config)
 
 
 RADIUS_MODE_MANUAL = _t("radius.manual")
 RADIUS_MODE_SPACING = _t("radius.spacing")
 RADIUS_MODE_SLICES = _t("radius.slices")
+
+TIP_RING_TYPE_RECTANGULAR = _t("tip_ring.rectangular")
+TIP_RING_TYPE_AERODYNAMIC = _t("tip_ring.aerodynamic")
+
+SPINNER_TYPE_PARABOLIC = _t("spinner_type.parabolic")
+SPINNER_TYPE_OGIVE = _t("spinner_type.ogive")
 
 
 def _normalize_radius_distribution_mode(value: object) -> str:
@@ -776,26 +900,34 @@ def _update_radius_distribution_inputs(
     )
 
 
-def _update_hoop_inputs(
+def _update_tip_ring_inputs(
     inputs: adsk.core.CommandInputs,
 ) -> None:
-    enabled = bool(
-        _required_command_input(inputs, "createHoop").value
+    create_enabled = bool(
+        _required_command_input(inputs, "createTipRing").value
     )
-    for input_id in ("hoopThickness", "hoopHeight", "hoopOffset"):
-        _required_command_input(inputs, input_id).isEnabled = enabled
+    ring_type_input = _required_command_input(inputs, "tipRingType")
+    ring_type_input.isEnabled = create_enabled
 
-
-
-def _update_airfoil_ring_inputs(
-    inputs: adsk.core.CommandInputs,
-) -> None:
-    enabled = bool(
-        _required_command_input(
-            inputs,
-            "createAirfoilRing",
-        ).value
+    selected_type = _selected_dropdown_name(inputs, "tipRingType")
+    rectangular_enabled = (
+        create_enabled
+        and selected_type == TIP_RING_TYPE_RECTANGULAR
     )
+    aerodynamic_enabled = (
+        create_enabled
+        and selected_type == TIP_RING_TYPE_AERODYNAMIC
+    )
+
+    for input_id in (
+        "hoopThickness",
+        "hoopHeight",
+        "hoopOffset",
+    ):
+        _required_command_input(inputs, input_id).isEnabled = (
+            rectangular_enabled
+        )
+
     for input_id in (
         "airfoilRingNaca",
         "airfoilRingChord",
@@ -804,24 +936,35 @@ def _update_airfoil_ring_inputs(
         "airfoilRingTeThickness",
         "airfoilRingProfilePoints",
     ):
-        _required_command_input(inputs, input_id).isEnabled = enabled
-
+        _required_command_input(inputs, input_id).isEnabled = (
+            aerodynamic_enabled
+        )
 
 
 def _update_spinner_inputs(
     inputs: adsk.core.CommandInputs,
 ) -> None:
-    parabolic_enabled = bool(
-        _required_command_input(inputs, "createParabolicSpinner").value
+    create_enabled = bool(
+        _required_command_input(inputs, "createSpinner").value
     )
+    spinner_type_input = _required_command_input(inputs, "spinnerType")
+    spinner_type_input.isEnabled = create_enabled
+
+    selected_type = _selected_dropdown_name(inputs, "spinnerType")
+    parabolic_enabled = (
+        create_enabled
+        and selected_type == SPINNER_TYPE_PARABOLIC
+    )
+    ogive_enabled = (
+        create_enabled
+        and selected_type == SPINNER_TYPE_OGIVE
+    )
+
     for input_id in ("spinnerDiameter", "spinnerLength"):
         _required_command_input(inputs, input_id).isEnabled = (
             parabolic_enabled
         )
 
-    ogive_enabled = bool(
-        _required_command_input(inputs, "createOgiveSpinner").value
-    )
     for input_id in (
         "ogiveSpinnerDiameter",
         "ogiveSpinnerLength",
@@ -832,6 +975,410 @@ def _update_spinner_inputs(
 
 MODE_FLAT = _t("mode.flat")
 MODE_WRAPPED = _t("mode.wrapped")
+
+
+def _set_value_input_mm(
+    inputs: adsk.core.CommandInputs,
+    input_id: str,
+    value: object,
+) -> None:
+    item = adsk.core.ValueCommandInput.cast(
+        _required_command_input(inputs, input_id)
+    )
+    if not item:
+        raise RuntimeError(f"{input_id} não é um ValueCommandInput.")
+    item.expression = f"{float(value):g} mm"
+
+
+def _set_string_input(
+    inputs: adsk.core.CommandInputs,
+    input_id: str,
+    value: object,
+) -> None:
+    item = adsk.core.StringValueCommandInput.cast(
+        _required_command_input(inputs, input_id)
+    )
+    if not item:
+        raise RuntimeError(f"{input_id} não é um StringValueCommandInput.")
+    item.value = str(value)
+
+
+def _set_integer_input(
+    inputs: adsk.core.CommandInputs,
+    input_id: str,
+    value: object,
+) -> None:
+    item = adsk.core.IntegerSpinnerCommandInput.cast(
+        _required_command_input(inputs, input_id)
+    )
+    if not item:
+        raise RuntimeError(f"{input_id} não é um IntegerSpinnerCommandInput.")
+    item.value = int(value)
+
+
+def _set_bool_input(
+    inputs: adsk.core.CommandInputs,
+    input_id: str,
+    value: object,
+) -> None:
+    item = adsk.core.BoolValueCommandInput.cast(
+        _required_command_input(inputs, input_id)
+    )
+    if not item:
+        raise RuntimeError(f"{input_id} não é um BoolValueCommandInput.")
+    item.value = bool(value)
+
+
+def _select_dropdown_item(
+    inputs: adsk.core.CommandInputs,
+    input_id: str,
+    item_name: str,
+) -> None:
+    drop_down = adsk.core.DropDownCommandInput.cast(
+        _required_command_input(inputs, input_id)
+    )
+    if not drop_down:
+        raise RuntimeError(f"{input_id} não é um DropDownCommandInput.")
+
+    for index in range(drop_down.listItems.count):
+        item = drop_down.listItems.item(index)
+        if item and item.name == item_name:
+            item.isSelected = True
+            return
+
+    raise ValueError(
+        f"Opção {item_name!r} não encontrada em {input_id}."
+    )
+
+
+def _apply_config_to_dialog(
+    inputs: adsk.core.CommandInputs,
+    config: dict,
+) -> None:
+    """Apply a complete stored configuration to the current command dialog."""
+    _set_integer_input(
+        inputs,
+        "numberOfBlades",
+        max(1, min(12, int(config.get("Number_of_Blades", 2)))),
+    )
+    _set_value_input_mm(
+        inputs,
+        "propellerDiameter",
+        config["Propeller_Diameter"],
+    )
+    _set_value_input_mm(inputs, "bladePitch", config["Blade_Pitch"])
+    _select_dropdown_item(
+        inputs,
+        "propDirection",
+        "+1" if int(config.get("Prop_Direction", -1)) == 1 else "-1",
+    )
+    _set_value_input_mm(
+        inputs,
+        "propZOffset",
+        config.get("Prop_Z_Offset", 0.0),
+    )
+    _set_string_input(
+        inputs,
+        "maxChordFraction",
+        f"{float(config['Max_Chord_Fraction']):g}",
+    )
+    _set_value_input_mm(inputs, "rootLength", config["Root_Length"])
+    _set_string_input(
+        inputs,
+        "elenFraction",
+        f"{float(config['Elen_Fraction']):g}",
+    )
+    _set_string_input(
+        inputs,
+        "sweepAngle",
+        f"{float(config.get('Sweep_Angle', 0.0)):g}",
+    )
+
+    _set_string_input(
+        inputs,
+        "rootNaca",
+        str(config["Root_NACA_Airfoil"]).zfill(4),
+    )
+    _set_string_input(
+        inputs,
+        "midNaca",
+        str(config["Mid_NACA_Airfoil"]).zfill(4),
+    )
+    _set_string_input(
+        inputs,
+        "tipNaca",
+        str(config["Tip_NACA_Airfoil"]).zfill(4),
+    )
+    _set_string_input(
+        inputs,
+        "transitionPoint",
+        f"{float(config['Transition_Point']):g}",
+    )
+    _set_value_input_mm(
+        inputs,
+        "trailingEdgeThickness",
+        config["Trailing_Edge_Thickness"],
+    )
+    _set_value_input_mm(inputs, "fairingSize", config["Fairing_Size"])
+
+    _set_bool_input(
+        inputs,
+        "createHubAndJoin",
+        config.get("Create_Hub_And_Join", True),
+    )
+    _set_value_input_mm(inputs, "hubDiameter", config["Hub_Diameter"])
+    _set_value_input_mm(
+        inputs,
+        "hubLength",
+        config.get("Hub_Length", 5.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "holeDiameter",
+        config.get("Hole_Diameter", 3.0),
+    )
+
+    profile_points = int(config.get("Profile_Points", 41))
+    if profile_points == 0:
+        profile_points = 41
+    _set_integer_input(
+        inputs,
+        "profilePoints",
+        max(2, min(401, profile_points)),
+    )
+
+    radius_mode = _normalize_radius_distribution_mode(
+        config.get("Section_Distribution_Mode", "spacing")
+    )
+    _select_dropdown_item(
+        inputs,
+        "radiusDistributionMode",
+        radius_mode,
+    )
+
+    radii = config.get(
+        "Section_Radii",
+        [4.15, 5.15, 6.15, 7.15, 8.15, 14.335, 38.1],
+    )
+    _set_string_input(
+        inputs,
+        "radii",
+        "; ".join(f"{float(value):g}" for value in radii),
+    )
+    spacing_mm = float(config.get("Section_Spacing_mm", 1.0))
+    _set_value_input_mm(inputs, "sectionSpacing", spacing_mm)
+
+    default_blade_length_mm = 0.5 * (
+        float(config["Propeller_Diameter"])
+        - float(config["Hub_Diameter"])
+    )
+    slices = int(
+        config.get(
+            "Section_Slices",
+            max(
+                1,
+                round(
+                    default_blade_length_mm
+                    / max(spacing_mm, 1e-9)
+                ),
+            ),
+        )
+    )
+    _set_integer_input(
+        inputs,
+        "sectionSlices",
+        max(1, min(998, slices)),
+    )
+
+    create_hoop = bool(config.get("Hoop", False))
+    create_airfoil_ring = bool(config.get("Airfoil_Ring", False))
+    create_tip_ring = create_hoop or create_airfoil_ring
+    _set_bool_input(inputs, "createTipRing", create_tip_ring)
+    _select_dropdown_item(
+        inputs,
+        "tipRingType",
+        (
+            TIP_RING_TYPE_AERODYNAMIC
+            if create_airfoil_ring and not create_hoop
+            else TIP_RING_TYPE_RECTANGULAR
+        ),
+    )
+    _set_value_input_mm(
+        inputs,
+        "hoopThickness",
+        config.get("Hoop_Thickness", 1.2),
+    )
+    _set_value_input_mm(
+        inputs,
+        "hoopHeight",
+        config.get("Hoop_Height", 6.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "hoopOffset",
+        config.get("Hoop_Offset", 0.0),
+    )
+    _set_string_input(
+        inputs,
+        "airfoilRingNaca",
+        str(config.get("Airfoil_Ring_NACA", "0015")).zfill(4),
+    )
+    _set_value_input_mm(
+        inputs,
+        "airfoilRingChord",
+        config.get("Airfoil_Ring_Chord", 0.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "airfoilRingDiameter",
+        config.get(
+            "Airfoil_Ring_Diameter",
+            config["Propeller_Diameter"],
+        ),
+    )
+    _set_value_input_mm(
+        inputs,
+        "airfoilRingAxialOffset",
+        config.get("Airfoil_Ring_Axial_Offset", 0.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "airfoilRingTeThickness",
+        config.get("Airfoil_Ring_TE_Thickness", 0.4),
+    )
+    _set_integer_input(
+        inputs,
+        "airfoilRingProfilePoints",
+        max(
+            2,
+            min(
+                200,
+                int(config.get("Airfoil_Ring_Profile_Points", 20)),
+            ),
+        ),
+    )
+
+    parabolic = bool(config.get("Parabolic_Spinner_Yes", False))
+    ogive = bool(config.get("Ogive_Spinner_Yes", False))
+    create_spinner = parabolic or ogive
+    _set_bool_input(inputs, "createSpinner", create_spinner)
+    _select_dropdown_item(
+        inputs,
+        "spinnerType",
+        (
+            SPINNER_TYPE_OGIVE
+            if ogive and not parabolic
+            else SPINNER_TYPE_PARABOLIC
+        ),
+    )
+    _set_value_input_mm(
+        inputs,
+        "spinnerDiameter",
+        config.get("Spinner_Diameter", 20.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "spinnerLength",
+        config.get("Spinner_Length", 20.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "ogiveSpinnerDiameter",
+        config.get("Ogive_Spinner_Diameter", 20.0),
+    )
+    _set_value_input_mm(
+        inputs,
+        "ogiveSpinnerLength",
+        config.get("Ogive_Spinner_Length", 20.0),
+    )
+    _set_string_input(
+        inputs,
+        "noseRadius",
+        f"{float(config.get('Nose_Radius', 0.24)):g}",
+    )
+
+    _set_bool_input(
+        inputs,
+        "hideCreatedSketches",
+        config.get("Hide_Created_Sketches", True),
+    )
+
+    raw_section_mode = str(
+        config.get("Section_Mode", "wrapped_3d")
+    ).strip().lower()
+    _select_dropdown_item(
+        inputs,
+        "sectionMode",
+        (
+            MODE_FLAT
+            if raw_section_mode in {"flat", "flat_2d", "2d", "planar"}
+            else MODE_WRAPPED
+        ),
+    )
+    _set_bool_input(
+        inputs,
+        "applyAngle",
+        config.get("Apply_Geometric_Angle", True),
+    )
+    _set_string_input(
+        inputs,
+        "centerline",
+        f"{float(config.get('Centerline', 1.0)):g}",
+    )
+    _set_bool_input(
+        inputs,
+        "createSurfaceLoft",
+        config.get("Create_Surface_Loft", True),
+    )
+    _set_bool_input(
+        inputs,
+        "extendSurfaceEnds",
+        config.get("Extend_Surface_Ends", True),
+    )
+    _set_value_input_mm(
+        inputs,
+        "extensionDistance",
+        config.get("Surface_Extension_mm", 0.1),
+    )
+    _set_bool_input(
+        inputs,
+        "createLimitCylinders",
+        config.get("Create_Limit_Cylinders", True),
+    )
+    _set_value_input_mm(
+        inputs,
+        "cylinderAxialMargin",
+        config.get("Cylinder_Axial_Margin_mm", 1.0),
+    )
+    _set_bool_input(
+        inputs,
+        "finalizeSolid",
+        config.get("Finalize_Solid", True),
+    )
+    _set_value_input_mm(
+        inputs,
+        "stitchTolerance",
+        config.get("Stitch_Tolerance_mm", 0.01),
+    )
+    _set_bool_input(
+        inputs,
+        "cutBelowHubBase",
+        config.get("Cut_Below_Hub_Base", True),
+    )
+    _set_bool_input(
+        inputs,
+        "createBladePattern",
+        config.get("Create_Blade_Pattern", True),
+    )
+
+    _update_radius_distribution_inputs(inputs)
+    _update_tip_ring_inputs(inputs)
+    _update_spinner_inputs(inputs)
+
+    tip_group = _required_command_input(inputs, "tipRingGroup")
+    spinner_group = _required_command_input(inputs, "spinnerGroup")
+    tip_group.isExpanded = create_tip_ring
+    spinner_group.isExpanded = create_spinner
 
 
 # =============================================================================
@@ -847,6 +1394,7 @@ MODE_WRAPPED = _t("mode.wrapped")
 class GenerationResult:
     section_count: int
     section_mode: str
+    component_name: str = ""
 
     surface_loft_requested: bool = False
     surface_loft_created: bool = False
@@ -980,20 +1528,31 @@ def _add_closed_spline_3d(
 
 
 def _create_closed_section_path(
+    component: adsk.fusion.Component,
     spline: adsk.fusion.SketchFittedSpline,
     closing_line: adsk.fusion.SketchLine,
     radius_mm: float,
 ) -> adsk.fusion.Path:
-    """Cria um Path fechado contendo a spline e a reta do bordo de fuga."""
+    """
+    Cria um Path fechado no contexto do componente dono das curvas.
+
+    Features.createPath evita perder o caminho de montagem quando o sketch
+    pertence a um componente filho ativo.
+    """
+    if component is None or not component.isValid:
+        raise RuntimeError(
+            "O componente da seção não é mais válido."
+        )
+
     curves = adsk.core.ObjectCollection.create()
     curves.add(spline)
     curves.add(closing_line)
 
-    path = adsk.fusion.Path.create(
+    path = component.features.createPath(
         curves,
-        adsk.fusion.ChainedCurveOptions.noChainedCurves,
+        False,
     )
-    if not path:
+    if path is None or not path.isValid:
         raise RuntimeError(
             f"Não foi possível criar o Path fechado em R={radius_mm:g} mm."
         )
@@ -3298,6 +3857,7 @@ def _generate_wrapped_sections(
             sketch.isComputeDeferred = False
 
         section_path = _create_closed_section_path(
+            component,
             spline,
             closing_line,
             radius_mm,
@@ -3652,14 +4212,21 @@ def _generate_sections(
     nose_radius_fraction: float,
 ) -> GenerationResult:
     design = adsk.fusion.Design.cast(APP.activeProduct)
-    if not design:
+    if design is None or not design.isValid:
         raise RuntimeError(_t("error.design_required"))
+
+    component = design.activeComponent
+    if component is None or not component.isValid:
+        raise RuntimeError(_t("error.active_component_required"))
+
+    component_name = str(
+        component.name or _t("result.unnamed_component")
+    )
 
     raw_config = _load_raw_config()
     raw_config.update(config_overrides)
     config = BladeConfig.from_mapping(raw_config)
     radii = validate_radii(config, radii)
-    component = design.rootComponent
 
     if section_mode == MODE_FLAT:
         count = _generate_flat_sections(
@@ -3673,10 +4240,11 @@ def _generate_sections(
         return GenerationResult(
             section_count=count,
             section_mode=MODE_FLAT,
+            component_name=component_name,
         )
 
     if section_mode == MODE_WRAPPED:
-        return _generate_wrapped_sections(
+        wrapped_result = _generate_wrapped_sections(
             component,
             config,
             radii,
@@ -3716,8 +4284,194 @@ def _generate_sections(
             ogive_spinner_length_mm,
             nose_radius_fraction,
         )
+        return replace(
+            wrapped_result,
+            component_name=component_name,
+        )
 
     raise ValueError(f"Modo de seção desconhecido: {section_mode!r}.")
+
+
+# =============================================================================
+# TIMELINE GROUPING
+#
+# Features created in Command.execute belong to the command transaction. The
+# timeline can still report its pre-transaction count inside execute, so group
+# creation is deferred to UserInterface.commandTerminated.
+# =============================================================================
+
+TIMELINE_GROUP_PREFIX = "Elliptical NACA Propeller"
+
+
+def _capture_timeline_group_request() -> dict:
+    """
+    Capture the design and first future timeline index before generation.
+
+    The returned request always records why grouping is unavailable, avoiding
+    the silent behavior of the previous implementation.
+    """
+    design = adsk.fusion.Design.cast(APP.activeProduct)
+    if design is None or not design.isValid:
+        return {
+            "design": None,
+            "start_index": None,
+            "skip_key": "result.timeline_group_skipped_no_design",
+        }
+
+    if (
+        design.designType
+        != adsk.fusion.DesignTypes.ParametricDesignType
+    ):
+        return {
+            "design": design,
+            "start_index": None,
+            "skip_key": "result.timeline_group_skipped_direct",
+        }
+
+    timeline = design.timeline
+    if timeline is None or not timeline.isValid:
+        return {
+            "design": design,
+            "start_index": None,
+            "skip_key": "result.timeline_group_skipped_no_timeline",
+        }
+
+    if int(timeline.markerPosition) != int(timeline.count):
+        return {
+            "design": design,
+            "start_index": None,
+            "skip_key": "result.timeline_group_skipped_marker",
+        }
+
+    return {
+        "design": design,
+        "start_index": int(timeline.count),
+        "skip_key": "",
+    }
+
+
+def _next_timeline_group_name(
+    timeline: adsk.fusion.Timeline,
+    incomplete: bool,
+) -> str:
+    """Return the next sequential name used by this add-in."""
+    highest_number = 0
+    name_pattern = re.compile(
+        rf"^{re.escape(TIMELINE_GROUP_PREFIX)}\s+(\d+)"
+    )
+
+    groups = timeline.timelineGroups
+    for index in range(groups.count):
+        group = groups.item(index)
+        if group is None or not group.isValid:
+            continue
+
+        match = name_pattern.match(str(group.name or ""))
+        if match:
+            highest_number = max(
+                highest_number,
+                int(match.group(1)),
+            )
+
+    name = f"{TIMELINE_GROUP_PREFIX} {highest_number + 1:02d}"
+    if incomplete:
+        name += " (incomplete)"
+    return name
+
+
+def _create_timeline_group_for_run(
+    request: dict,
+    incomplete: bool = False,
+) -> tuple[str, str, str]:
+    """
+    Create a group after command termination.
+
+    Returns:
+        (group_name, error_detail, skipped_message)
+    """
+    skip_key = str(request.get("skip_key", ""))
+    if skip_key:
+        return "", "", _t(skip_key)
+
+    try:
+        design = request.get("design")
+        if design is None or not design.isValid:
+            return "", _t("result.timeline_group_invalid_design"), ""
+
+        if (
+            design.designType
+            != adsk.fusion.DesignTypes.ParametricDesignType
+        ):
+            return "", "", _t("result.timeline_group_skipped_direct")
+
+        timeline = design.timeline
+        if timeline is None or not timeline.isValid:
+            return "", _t("result.timeline_group_missing_timeline"), ""
+
+        start_index = int(request["start_index"])
+        current_count = int(timeline.count)
+        end_index = current_count - 1
+        generated_item_count = end_index - start_index + 1
+
+        if generated_item_count <= 0:
+            return (
+                "",
+                _t(
+                    "result.timeline_group_no_items",
+                    start=start_index,
+                    count=current_count,
+                ),
+                "",
+            )
+
+        if generated_item_count == 1:
+            return (
+                "",
+                "",
+                _t(
+                    "result.timeline_group_single_item",
+                    index=start_index,
+                ),
+            )
+
+        # A TimelineGroup cannot contain another group. This should not occur
+        # because only new end-of-timeline items are captured, but report it
+        # explicitly rather than returning silently.
+        for index in range(start_index, end_index + 1):
+            timeline_object = timeline.item(index)
+            if timeline_object and timeline_object.isGroup:
+                return "", _t("result.timeline_group_nested"), ""
+
+        group_name = _next_timeline_group_name(
+            timeline,
+            incomplete,
+        )
+        group = timeline.timelineGroups.add(
+            start_index,
+            end_index,
+        )
+        if group is None or not group.isValid:
+            return "", _t("result.timeline_group_null"), ""
+
+        group.name = group_name
+        group.isCollapsed = True
+        return group.name, "", ""
+    except Exception:
+        return "", traceback.format_exc(), ""
+
+
+def _queue_post_termination_result(
+    request: dict,
+    message: str,
+    incomplete: bool,
+) -> None:
+    """Store one result for the global commandTerminated event."""
+    global _pending_timeline_run
+    _pending_timeline_run = {
+        "request": request,
+        "message": message,
+        "incomplete": bool(incomplete),
+    }
 
 
 # =============================================================================
@@ -3731,6 +4485,11 @@ def _generate_sections(
 
 class CommandExecuteHandler(adsk.core.CommandEventHandler):
     def notify(self, args: adsk.core.CommandEventArgs):
+        global _pending_timeline_run
+
+        timeline_group_request = None
+        _pending_timeline_run = None
+
         try:
             inputs = args.command.commandInputs
 
@@ -3785,6 +4544,13 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                 section_spacing_mm,
                 section_slices,
             )
+
+            # All dialog values and the radial distribution are valid at this
+            # point. Persist them before geometry creation so a later Fusion
+            # feature failure does not discard the user's last settings.
+            _save_current_config(inputs)
+
+            timeline_group_request = _capture_timeline_group_request()
 
             result = _generate_sections(
                 resolved_radii,
@@ -4040,14 +4806,94 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                 tip=resolved_radii[-1],
             )
 
-            UI.messageBox(
-                _t("result.header", count=result.section_count)
+            result_message = (
+                _t(
+                    "result.header",
+                    count=result.section_count,
+                    component=result.component_name,
+                )
                 + "\n\n" + distribution_note
                 + "\n\n" + detail
                 + "\n\n" + visibility_note
             )
+            _queue_post_termination_result(
+                timeline_group_request,
+                result_message,
+                incomplete=False,
+            )
         except Exception:
-            UI.messageBox(_t("error.generate", detail=traceback.format_exc()))
+            error_message = _t(
+                "error.generate",
+                detail=traceback.format_exc(),
+            )
+
+            # If geometry creation had already begun, delay the error message
+            # too. The transaction will then be committed before any partial
+            # features are inspected and grouped.
+            if timeline_group_request is not None:
+                _queue_post_termination_result(
+                    timeline_group_request,
+                    error_message,
+                    incomplete=True,
+                )
+            else:
+                UI.messageBox(error_message)
+
+
+class CommandTerminatedHandler(
+    adsk.core.ApplicationCommandEventHandler
+):
+    def notify(self, args: adsk.core.ApplicationCommandEventArgs):
+        global _pending_timeline_run
+
+        try:
+            if args.commandId != CMD_ID:
+                return
+
+            pending = _pending_timeline_run
+            _pending_timeline_run = None
+            if not pending:
+                return
+
+            group_name, group_error, skipped_message = (
+                _create_timeline_group_for_run(
+                    pending["request"],
+                    incomplete=pending["incomplete"],
+                )
+            )
+
+            if group_name:
+                if pending["incomplete"]:
+                    timeline_note = _t(
+                        "error.timeline_partial_group",
+                        name=group_name,
+                    )
+                else:
+                    timeline_note = _t(
+                        "result.timeline_group",
+                        name=group_name,
+                    )
+            elif skipped_message:
+                timeline_note = skipped_message
+            else:
+                timeline_note = _t(
+                    "result.timeline_group_fail",
+                    detail=group_error,
+                )
+
+            UI.messageBox(
+                pending["message"]
+                + "\n\n"
+                + timeline_note
+            )
+        except Exception:
+            _pending_timeline_run = None
+            UI.messageBox(
+                _t(
+                    "error.timeline_post_commit",
+                    detail=traceback.format_exc(),
+                )
+            )
 
 
 class CommandInputChangedHandler(adsk.core.InputChangedEventHandler):
@@ -4059,31 +4905,32 @@ class CommandInputChangedHandler(adsk.core.InputChangedEventHandler):
 
             command_inputs = args.firingEvent.sender.commandInputs
 
-            if changed_input.id == "saveDefaults":
+            if changed_input.id == "restoreDefaults":
                 try:
-                    _save_current_config(command_inputs)
-                    UI.messageBox(
-                        _t(
-                            "save.success",
-                            path=_config_path(),
-                        )
+                    factory_config = _load_factory_config()
+                    _apply_config_to_dialog(
+                        command_inputs,
+                        factory_config,
                     )
+                    _delete_user_configuration()
+                    UI.messageBox(_t("restore.success"))
                 except Exception:
                     UI.messageBox(
                         _t(
-                            "save.error",
+                            "restore.error",
                             detail=traceback.format_exc(),
                         )
                     )
             elif changed_input.id == "radiusDistributionMode":
                 _update_radius_distribution_inputs(command_inputs)
-            elif changed_input.id == "createHoop":
-                _update_hoop_inputs(command_inputs)
-            elif changed_input.id == "createAirfoilRing":
-                _update_airfoil_ring_inputs(command_inputs)
             elif changed_input.id in (
-                "createParabolicSpinner",
-                "createOgiveSpinner",
+                "createTipRing",
+                "tipRingType",
+            ):
+                _update_tip_ring_inputs(command_inputs)
+            elif changed_input.id in (
+                "createSpinner",
+                "spinnerType",
             ):
                 _update_spinner_inputs(command_inputs)
         except Exception:
@@ -4094,7 +4941,10 @@ class CommandInputChangedHandler(adsk.core.InputChangedEventHandler):
 
 class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
     def notify(self, args: adsk.core.CommandCreatedEventArgs):
+        global _pending_timeline_run
+
         try:
+            _pending_timeline_run = None
             raw_config = _load_raw_config()
 
             default_radii = raw_config.get(
@@ -4240,6 +5090,30 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 raw_config.get("Nose_Radius", 0.24)
             )
 
+            create_tip_ring_default = bool(
+                create_hoop_default or create_airfoil_ring_default
+            )
+            tip_ring_type_default = (
+                TIP_RING_TYPE_AERODYNAMIC
+                if (
+                    create_airfoil_ring_default
+                    and not create_hoop_default
+                )
+                else TIP_RING_TYPE_RECTANGULAR
+            )
+
+            create_spinner_default = bool(
+                parabolic_spinner_default or ogive_spinner_default
+            )
+            spinner_type_default = (
+                SPINNER_TYPE_OGIVE
+                if (
+                    ogive_spinner_default
+                    and not parabolic_spinner_default
+                )
+                else SPINNER_TYPE_PARABOLIC
+            )
+
             profile_points_default = int(
                 raw_config.get("Profile_Points", 41)
             )
@@ -4262,6 +5136,7 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
 
             command = args.command
             command.isRepeatable = True
+            command.okButtonText = _t("ui.generate")
             command.setDialogInitialSize(
                 DIALOG_INITIAL_WIDTH,
                 DIALOG_INITIAL_HEIGHT,
@@ -4273,26 +5148,26 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
 
             inputs = command.commandInputs
 
-            info = inputs.addTextBoxCommandInput(
-                "info",
-                "",
-                _t("ui.info", language=_t("language.name")),
-                2,
-                True,
-            )
-            info.isFullWidth = True
-
-            save_button = inputs.addBoolValueInput(
-                "saveDefaults",
-                _t("ui.save_defaults"),
+            # Generate automatically remembers every validated value.
+            # This button restores the immutable configuration distributed
+            # with the add-in without generating or modifying geometry.
+            restore_button = inputs.addBoolValueInput(
+                "restoreDefaults",
+                _t("ui.restore_defaults"),
                 False,
                 "",
                 False,
             )
-            save_button.isFullWidth = True
+            restore_button.isFullWidth = True
+            restore_button.tooltip = _t(
+                "ui.restore_defaults_tooltip"
+            )
+            restore_button.tooltipDescription = _t(
+                "ui.restore_defaults_tooltip_description"
+            )
 
             # ---------------------------------------------------------------
-            # Grupo: geometria principal
+            # Group: global propeller geometry
             # ---------------------------------------------------------------
             geometry_group = inputs.addGroupCommandInput(
                 "geometryGroup",
@@ -4301,6 +5176,14 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             geometry_group.isExpanded = True
             geometry_inputs = geometry_group.children
 
+            geometry_inputs.addIntegerSpinnerCommandInput(
+                "numberOfBlades",
+                _t("ui.number_of_blades"),
+                1,
+                12,
+                1,
+                max(1, min(12, number_of_blades_default)),
+            )
             geometry_inputs.addValueInput(
                 "propellerDiameter",
                 _t("ui.propeller_diameter"),
@@ -4310,19 +5193,29 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 ),
             )
             geometry_inputs.addValueInput(
-                "hubDiameter",
-                _t("ui.hub_diameter"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{float(raw_config['Hub_Diameter']):g} mm"
-                ),
-            )
-            geometry_inputs.addValueInput(
                 "bladePitch",
                 _t("ui.blade_pitch"),
                 "mm",
                 adsk.core.ValueInput.createByString(
                     f"{float(raw_config['Blade_Pitch']):g} mm"
+                ),
+            )
+
+            direction_input = geometry_inputs.addDropDownCommandInput(
+                "propDirection",
+                _t("ui.prop_direction"),
+                adsk.core.DropDownStyles.TextListDropDownStyle,
+            )
+            direction_default = int(raw_config["Prop_Direction"])
+            direction_input.listItems.add("-1", direction_default == -1)
+            direction_input.listItems.add("+1", direction_default == 1)
+
+            geometry_inputs.addValueInput(
+                "propZOffset",
+                _t("ui.prop_z_offset"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{prop_z_offset_default_mm:g} mm"
                 ),
             )
             geometry_inputs.addStringValueInput(
@@ -4343,50 +5236,14 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 _t("ui.elen_fraction"),
                 f"{float(raw_config['Elen_Fraction']):g}",
             )
-
-            direction_input = geometry_inputs.addDropDownCommandInput(
-                "propDirection",
-                _t("ui.prop_direction"),
-                adsk.core.DropDownStyles.TextListDropDownStyle,
-            )
-            direction_default = int(raw_config["Prop_Direction"])
-            direction_input.listItems.add("-1", direction_default == -1)
-            direction_input.listItems.add("+1", direction_default == 1)
-
-            geometry_inputs.addStringValueInput(
-                "centerline",
-                _t("ui.centerline"),
-                f"{float(raw_config['Centerline']):g}",
-            )
             geometry_inputs.addStringValueInput(
                 "sweepAngle",
                 _t("ui.sweep_angle"),
                 f"{float(raw_config['Sweep_Angle']):g}",
             )
-            geometry_inputs.addValueInput(
-                "trailingEdgeThickness",
-                _t("ui.trailing_edge_thickness"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{float(raw_config['Trailing_Edge_Thickness']):g} mm"
-                ),
-            )
-            geometry_inputs.addValueInput(
-                "fairingSize",
-                _t("ui.fairing_size"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{float(raw_config['Fairing_Size']):g} mm"
-                ),
-            )
-            geometry_inputs.addStringValueInput(
-                "transitionPoint",
-                _t("ui.transition_point"),
-                f"{float(raw_config['Transition_Point']):g}",
-            )
 
             # ---------------------------------------------------------------
-            # Grupo: perfis
+            # Group: airfoil definitions and transitions
             # ---------------------------------------------------------------
             profiles_group = inputs.addGroupCommandInput(
                 "profilesGroup",
@@ -4410,8 +5267,72 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 _t("ui.tip_naca"),
                 str(raw_config["Tip_NACA_Airfoil"]).zfill(4),
             )
+            profiles_inputs.addStringValueInput(
+                "transitionPoint",
+                _t("ui.transition_point"),
+                f"{float(raw_config['Transition_Point']):g}",
+            )
+            profiles_inputs.addValueInput(
+                "trailingEdgeThickness",
+                _t("ui.trailing_edge_thickness"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{float(raw_config['Trailing_Edge_Thickness']):g} mm"
+                ),
+            )
+            profiles_inputs.addValueInput(
+                "fairingSize",
+                _t("ui.fairing_size"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{float(raw_config['Fairing_Size']):g} mm"
+                ),
+            )
+
             # ---------------------------------------------------------------
-            # Grupo: seções
+            # Group: hub
+            # ---------------------------------------------------------------
+            hub_group = inputs.addGroupCommandInput(
+                "hubGroup",
+                _t("ui.group.assembly"),
+            )
+            hub_group.isExpanded = True
+            hub_inputs = hub_group.children
+
+            hub_inputs.addBoolValueInput(
+                "createHubAndJoin",
+                _t("ui.create_hub"),
+                True,
+                "",
+                create_hub_default,
+            )
+            hub_inputs.addValueInput(
+                "hubDiameter",
+                _t("ui.hub_diameter"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{float(raw_config['Hub_Diameter']):g} mm"
+                ),
+            )
+            hub_inputs.addValueInput(
+                "hubLength",
+                _t("ui.hub_length"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{hub_length_default_mm:g} mm"
+                ),
+            )
+            hub_inputs.addValueInput(
+                "holeDiameter",
+                _t("ui.hole_diameter"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{hole_diameter_default_mm:g} mm"
+                ),
+            )
+
+            # ---------------------------------------------------------------
+            # Group: radial and airfoil resolution
             # ---------------------------------------------------------------
             sections_group = inputs.addGroupCommandInput(
                 "sectionsGroup",
@@ -4428,14 +5349,6 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 1,
                 profile_points_default,
             )
-
-            mode_input = sections_inputs.addDropDownCommandInput(
-                "sectionMode",
-                _t("ui.section_type"),
-                adsk.core.DropDownStyles.TextListDropDownStyle,
-            )
-            mode_input.listItems.add(MODE_FLAT, not wrapped_default)
-            mode_input.listItems.add(MODE_WRAPPED, wrapped_default)
 
             radius_distribution_input = sections_inputs.addDropDownCommandInput(
                 "radiusDistributionMode",
@@ -4490,14 +5403,208 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             )
             radius_info.isFullWidth = True
 
-            sections_inputs.addBoolValueInput(
-                "applyAngle",
-                _t("ui.apply_pitch_angle"),
+            # ---------------------------------------------------------------
+            # Group: mutually exclusive tip-ring types
+            # ---------------------------------------------------------------
+            tip_ring_group = inputs.addGroupCommandInput(
+                "tipRingGroup",
+                _t("ui.group.tip_ring"),
+            )
+            tip_ring_group.isExpanded = create_tip_ring_default
+            tip_ring_inputs = tip_ring_group.children
+
+            create_tip_ring_input = tip_ring_inputs.addBoolValueInput(
+                "createTipRing",
+                _t("ui.create_tip_ring"),
                 True,
                 "",
-                apply_angle_default,
+                create_tip_ring_default,
             )
-            sections_inputs.addBoolValueInput(
+            create_tip_ring_input.tooltipDescription = _t(
+                "ui.tip_ring_description"
+            )
+
+            tip_ring_type_input = tip_ring_inputs.addDropDownCommandInput(
+                "tipRingType",
+                _t("ui.tip_ring_type"),
+                adsk.core.DropDownStyles.TextListDropDownStyle,
+            )
+            tip_ring_type_input.listItems.add(
+                TIP_RING_TYPE_RECTANGULAR,
+                tip_ring_type_default == TIP_RING_TYPE_RECTANGULAR,
+            )
+            tip_ring_type_input.listItems.add(
+                TIP_RING_TYPE_AERODYNAMIC,
+                tip_ring_type_default == TIP_RING_TYPE_AERODYNAMIC,
+            )
+
+            hoop_thickness_input = tip_ring_inputs.addValueInput(
+                "hoopThickness",
+                _t("ui.hoop_thickness"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{hoop_thickness_default_mm:g} mm"
+                ),
+            )
+            hoop_thickness_input.minimumValue = 0.001
+
+            hoop_height_input = tip_ring_inputs.addValueInput(
+                "hoopHeight",
+                _t("ui.hoop_height"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{hoop_height_default_mm:g} mm"
+                ),
+            )
+            hoop_height_input.minimumValue = 0.001
+
+            tip_ring_inputs.addValueInput(
+                "hoopOffset",
+                _t("ui.hoop_offset"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{hoop_offset_default_mm:g} mm"
+                ),
+            )
+
+            tip_ring_inputs.addStringValueInput(
+                "airfoilRingNaca",
+                _t("ui.airfoil_ring_naca"),
+                airfoil_ring_naca_default,
+            )
+            tip_ring_inputs.addValueInput(
+                "airfoilRingChord",
+                _t("ui.airfoil_ring_chord"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{airfoil_ring_chord_default_mm:g} mm"
+                ),
+            )
+            tip_ring_inputs.addValueInput(
+                "airfoilRingDiameter",
+                _t("ui.airfoil_ring_diameter"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{airfoil_ring_diameter_default_mm:g} mm"
+                ),
+            )
+            tip_ring_inputs.addValueInput(
+                "airfoilRingAxialOffset",
+                _t("ui.airfoil_ring_axial_offset"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{airfoil_ring_axial_offset_default_mm:g} mm"
+                ),
+            )
+            tip_ring_inputs.addValueInput(
+                "airfoilRingTeThickness",
+                _t("ui.airfoil_ring_te_thickness"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{airfoil_ring_te_thickness_default_mm:g} mm"
+                ),
+            )
+            tip_ring_inputs.addIntegerSpinnerCommandInput(
+                "airfoilRingProfilePoints",
+                _t("ui.airfoil_ring_profile_points"),
+                2,
+                200,
+                1,
+                airfoil_ring_profile_points_default,
+            )
+
+            # ---------------------------------------------------------------
+            # Group: mutually exclusive spinner types
+            # ---------------------------------------------------------------
+            spinner_group = inputs.addGroupCommandInput(
+                "spinnerGroup",
+                _t("ui.group.spinners"),
+            )
+            spinner_group.isExpanded = create_spinner_default
+            spinner_inputs = spinner_group.children
+
+            create_spinner_input = spinner_inputs.addBoolValueInput(
+                "createSpinner",
+                _t("ui.create_spinner"),
+                True,
+                "",
+                create_spinner_default,
+            )
+            create_spinner_input.tooltipDescription = _t(
+                "ui.spinner_description"
+            )
+
+            spinner_type_input = spinner_inputs.addDropDownCommandInput(
+                "spinnerType",
+                _t("ui.spinner_type"),
+                adsk.core.DropDownStyles.TextListDropDownStyle,
+            )
+            spinner_type_input.listItems.add(
+                SPINNER_TYPE_PARABOLIC,
+                spinner_type_default == SPINNER_TYPE_PARABOLIC,
+            )
+            spinner_type_input.listItems.add(
+                SPINNER_TYPE_OGIVE,
+                spinner_type_default == SPINNER_TYPE_OGIVE,
+            )
+
+            parabolic_diameter_input = spinner_inputs.addValueInput(
+                "spinnerDiameter",
+                _t("ui.spinner_diameter"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{spinner_diameter_default_mm:g} mm"
+                ),
+            )
+            parabolic_diameter_input.minimumValue = 0.001
+
+            parabolic_length_input = spinner_inputs.addValueInput(
+                "spinnerLength",
+                _t("ui.spinner_length"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{spinner_length_default_mm:g} mm"
+                ),
+            )
+            parabolic_length_input.minimumValue = 0.001
+
+            ogive_diameter_input = spinner_inputs.addValueInput(
+                "ogiveSpinnerDiameter",
+                _t("ui.ogive_spinner_diameter"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{ogive_spinner_diameter_default_mm:g} mm"
+                ),
+            )
+            ogive_diameter_input.minimumValue = 0.001
+
+            ogive_length_input = spinner_inputs.addValueInput(
+                "ogiveSpinnerLength",
+                _t("ui.ogive_spinner_length"),
+                "mm",
+                adsk.core.ValueInput.createByString(
+                    f"{ogive_spinner_length_default_mm:g} mm"
+                ),
+            )
+            ogive_length_input.minimumValue = 0.001
+
+            spinner_inputs.addStringValueInput(
+                "noseRadius",
+                _t("ui.nose_radius"),
+                f"{nose_radius_default:g}",
+            )
+
+            # ---------------------------------------------------------------
+            # Group: display-only behavior
+            # ---------------------------------------------------------------
+            display_group = inputs.addGroupCommandInput(
+                "displayGroup",
+                _t("ui.group.display"),
+            )
+            display_group.isExpanded = False
+            display_inputs = display_group.children
+
+            display_inputs.addBoolValueInput(
                 "hideCreatedSketches",
                 _t("ui.hide_sketches"),
                 True,
@@ -4506,7 +5613,7 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             )
 
             # ---------------------------------------------------------------
-            # Grupo: operações
+            # Group: diagnostic and construction controls
             # ---------------------------------------------------------------
             operations_group = inputs.addGroupCommandInput(
                 "operationsGroup",
@@ -4515,6 +5622,26 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             operations_group.isExpanded = False
             operations_inputs = operations_group.children
 
+            mode_input = operations_inputs.addDropDownCommandInput(
+                "sectionMode",
+                _t("ui.section_type"),
+                adsk.core.DropDownStyles.TextListDropDownStyle,
+            )
+            mode_input.listItems.add(MODE_FLAT, not wrapped_default)
+            mode_input.listItems.add(MODE_WRAPPED, wrapped_default)
+
+            operations_inputs.addBoolValueInput(
+                "applyAngle",
+                _t("ui.apply_pitch_angle"),
+                True,
+                "",
+                apply_angle_default,
+            )
+            operations_inputs.addStringValueInput(
+                "centerline",
+                _t("ui.centerline"),
+                f"{float(raw_config['Centerline']):g}",
+            )
             operations_inputs.addBoolValueInput(
                 "createSurfaceLoft",
                 _t("ui.create_loft"),
@@ -4590,249 +5717,9 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 "",
                 create_pattern_default,
             )
-            operations_inputs.addBoolValueInput(
-                "createHubAndJoin",
-                _t("ui.create_hub"),
-                True,
-                "",
-                create_hub_default,
-            )
-
-            # ---------------------------------------------------------------
-            # Grupo: hub e padrão circular
-            # ---------------------------------------------------------------
-            assembly_group = inputs.addGroupCommandInput(
-                "assemblyGroup",
-                _t("ui.group.assembly"),
-            )
-            assembly_group.isExpanded = True
-            assembly_inputs = assembly_group.children
-
-            assembly_inputs.addIntegerSpinnerCommandInput(
-                "numberOfBlades",
-                _t("ui.number_of_blades"),
-                1,
-                12,
-                1,
-                max(1, min(12, number_of_blades_default)),
-            )
-            assembly_inputs.addValueInput(
-                "hubLength",
-                _t("ui.hub_length"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{hub_length_default_mm:g} mm"
-                ),
-            )
-            assembly_inputs.addValueInput(
-                "holeDiameter",
-                _t("ui.hole_diameter"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{hole_diameter_default_mm:g} mm"
-                ),
-            )
-            assembly_inputs.addValueInput(
-                "propZOffset",
-                _t("ui.prop_z_offset"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{prop_z_offset_default_mm:g} mm"
-                ),
-            )
-            # ---------------------------------------------------------------
-            # Grupo: aro periférico
-            # ---------------------------------------------------------------
-            hoop_group = inputs.addGroupCommandInput(
-                "hoopGroup",
-                _t("ui.group.hoop"),
-            )
-            hoop_group.isExpanded = create_hoop_default
-            hoop_inputs = hoop_group.children
-
-            hoop_inputs.addBoolValueInput(
-                "createHoop",
-                _t("ui.create_hoop"),
-                True,
-                "",
-                create_hoop_default,
-            )
-
-            hoop_thickness_input = hoop_inputs.addValueInput(
-                "hoopThickness",
-                _t("ui.hoop_thickness"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{hoop_thickness_default_mm:g} mm"
-                ),
-            )
-            hoop_thickness_input.minimumValue = 0.001
-
-            hoop_height_input = hoop_inputs.addValueInput(
-                "hoopHeight",
-                _t("ui.hoop_height"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{hoop_height_default_mm:g} mm"
-                ),
-            )
-            hoop_height_input.minimumValue = 0.001
-
-            hoop_inputs.addValueInput(
-                "hoopOffset",
-                _t("ui.hoop_offset"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{hoop_offset_default_mm:g} mm"
-                ),
-            )
-
-            # ---------------------------------------------------------------
-            # Grupo: anel aerodinâmico do projeto original
-            # ---------------------------------------------------------------
-            airfoil_ring_group = inputs.addGroupCommandInput(
-                "airfoilRingGroup",
-                _t("ui.group.airfoil_ring"),
-            )
-            airfoil_ring_group.isExpanded = (
-                create_airfoil_ring_default
-            )
-            airfoil_ring_inputs = airfoil_ring_group.children
-
-            airfoil_ring_inputs.addBoolValueInput(
-                "createAirfoilRing",
-                _t("ui.create_airfoil_ring"),
-                True,
-                "",
-                create_airfoil_ring_default,
-            )
-            airfoil_ring_inputs.addStringValueInput(
-                "airfoilRingNaca",
-                _t("ui.airfoil_ring_naca"),
-                airfoil_ring_naca_default,
-            )
-            airfoil_ring_inputs.addValueInput(
-                "airfoilRingChord",
-                _t("ui.airfoil_ring_chord"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{airfoil_ring_chord_default_mm:g} mm"
-                ),
-            )
-            airfoil_ring_inputs.addValueInput(
-                "airfoilRingDiameter",
-                _t("ui.airfoil_ring_diameter"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{airfoil_ring_diameter_default_mm:g} mm"
-                ),
-            )
-            airfoil_ring_inputs.addValueInput(
-                "airfoilRingAxialOffset",
-                _t("ui.airfoil_ring_axial_offset"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{airfoil_ring_axial_offset_default_mm:g} mm"
-                ),
-            )
-            airfoil_ring_inputs.addValueInput(
-                "airfoilRingTeThickness",
-                _t("ui.airfoil_ring_te_thickness"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{airfoil_ring_te_thickness_default_mm:g} mm"
-                ),
-            )
-            airfoil_ring_inputs.addIntegerSpinnerCommandInput(
-                "airfoilRingProfilePoints",
-                _t("ui.airfoil_ring_profile_points"),
-                2,
-                200,
-                1,
-                airfoil_ring_profile_points_default,
-            )
-
-            # ---------------------------------------------------------------
-            # Grupo: spinners
-            # ---------------------------------------------------------------
-            spinner_group = inputs.addGroupCommandInput(
-                "spinnerGroup",
-                _t("ui.group.spinners"),
-            )
-            spinner_group.isExpanded = bool(
-                parabolic_spinner_default or ogive_spinner_default
-            )
-            spinner_inputs = spinner_group.children
-
-            spinner_inputs.addBoolValueInput(
-                "createParabolicSpinner",
-                _t("ui.parabolic_spinner"),
-                True,
-                "",
-                parabolic_spinner_default,
-            )
-            parabolic_diameter_input = spinner_inputs.addValueInput(
-                "spinnerDiameter",
-                _t("ui.spinner_diameter"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{spinner_diameter_default_mm:g} mm"
-                ),
-            )
-            parabolic_diameter_input.minimumValue = 0.001
-            parabolic_length_input = spinner_inputs.addValueInput(
-                "spinnerLength",
-                _t("ui.spinner_length"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{spinner_length_default_mm:g} mm"
-                ),
-            )
-            parabolic_length_input.minimumValue = 0.001
-
-            spinner_inputs.addBoolValueInput(
-                "createOgiveSpinner",
-                _t("ui.ogive_spinner"),
-                True,
-                "",
-                ogive_spinner_default,
-            )
-            ogive_diameter_input = spinner_inputs.addValueInput(
-                "ogiveSpinnerDiameter",
-                _t("ui.ogive_spinner_diameter"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{ogive_spinner_diameter_default_mm:g} mm"
-                ),
-            )
-            ogive_diameter_input.minimumValue = 0.001
-            ogive_length_input = spinner_inputs.addValueInput(
-                "ogiveSpinnerLength",
-                _t("ui.ogive_spinner_length"),
-                "mm",
-                adsk.core.ValueInput.createByString(
-                    f"{ogive_spinner_length_default_mm:g} mm"
-                ),
-            )
-            ogive_length_input.minimumValue = 0.001
-            spinner_inputs.addStringValueInput(
-                "noseRadius",
-                _t("ui.nose_radius"),
-                f"{nose_radius_default:g}",
-            )
-
-            spinner_info = spinner_inputs.addTextBoxCommandInput(
-                "spinnerInfo",
-                "",
-                _t("ui.spinner_info"),
-                3,
-                True,
-            )
-            spinner_info.isFullWidth = True
 
             _update_radius_distribution_inputs(inputs)
-            _update_hoop_inputs(inputs)
-            _update_airfoil_ring_inputs(inputs)
+            _update_tip_ring_inputs(inputs)
             _update_spinner_inputs(inputs)
 
             input_changed_handler = CommandInputChangedHandler()
@@ -4850,7 +5737,15 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
 
 def run(context):
     global _control
+    global _pending_timeline_run
+
     try:
+        _pending_timeline_run = None
+
+        terminated_handler = CommandTerminatedHandler()
+        UI.commandTerminated.add(terminated_handler)
+        _handlers.append(terminated_handler)
+
         command_definitions = UI.commandDefinitions
         command_definition = command_definitions.itemById(CMD_ID)
         if not command_definition:
@@ -4860,6 +5755,8 @@ def run(context):
                 CMD_DESCRIPTION,
                 "",
             )
+        else:
+            command_definition.name = CMD_NAME
 
         created_handler = CommandCreatedHandler()
         command_definition.commandCreated.add(created_handler)
@@ -4887,7 +5784,10 @@ def run(context):
 
 def stop(context):
     global _control
+    global _pending_timeline_run
+
     try:
+        _pending_timeline_run = None
         workspace = UI.workspaces.itemById(WORKSPACE_ID)
         if workspace:
             for panel_id in PANEL_IDS:

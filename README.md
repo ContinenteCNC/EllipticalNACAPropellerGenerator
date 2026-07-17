@@ -1,10 +1,13 @@
 # Elliptical NACA Propeller Generator
 
+[English](README.md) | [Português do Brasil](README.pt-BR.md)
+
+
 A multilingual Autodesk Fusion add-in for generating complete parametric
 propellers with elliptical blade planforms and smoothly transitioning NACA
 4-digit airfoils.
 
-Current release: **v0.20.0**
+Current release: **v0.21.0**
 
 ## Features
 
@@ -85,7 +88,7 @@ were separately confirmed.
 - `EllipticalNACAPropellerGenerator.py`: Fusion API adapter and construction.
 - `propeller_math.py`: pure Python implementation of the upstream equations.
 - `localization.py` and `locales/`: interface localization.
-- `propeller_config.json`: persisted defaults.
+- `propeller_defaults.json`: immutable factory defaults.
 - `docs/GEOMETRY.md`: equations and coordinate conventions.
 - `docs/FUSION_API_PIPELINE.md`: B-Rep construction sequence.
 - `docs/LLM_CONTEXT.md`: compact maintainer context for humans and LLMs.
@@ -128,3 +131,66 @@ min(20 mm, 0.5 * Propeller_Diameter * Max_Chord_Fraction)
 ```
 
 The existing rectangular `Hoop` remains available as a separate feature.
+
+
+### Interface organization
+
+The command groups related parameters by purpose. Tip-ring and spinner
+families each use one enable checkbox and one type selector, preventing
+overlapping alternatives from being generated in the same run. Existing JSON
+parameter names remain compatible.
+
+
+### Automatic parameter persistence
+
+Every validated parameter is saved automatically when **Generate** is pressed,
+before Fusion starts constructing geometry. The immutable factory values remain
+in `propeller_defaults.json`.
+
+The last user configuration is stored outside the repository and add-in
+installation:
+
+```text
+Windows: %APPDATA%\EllipticalNACAPropellerGenerator\propeller_user_config.json
+macOS:   ~/Library/Application Support/EllipticalNACAPropellerGenerator/propeller_user_config.json
+```
+
+Use **Restore factory defaults** to reload the distributed values and remove
+the saved user configuration. Restoring defaults does not generate geometry.
+
+### Timeline organization
+
+In parametric designs, each generation run is grouped only after Fusion fires
+the global `commandTerminated` event, when the command transaction has ended
+and its new timeline items are available. Groups are collapsed and named
+sequentially:
+
+```text
+Elliptical NACA Propeller 01
+Elliptical NACA Propeller 02
+...
+```
+
+The final generation message is also delayed until this post-commit step, so it
+always reports whether grouping succeeded, failed, or was intentionally
+skipped. The visible command name includes the current version.
+
+Timeline API objects are checked explicitly with `is None` and `isValid`, so a valid empty timeline on the first run is accepted.
+
+### Active component
+
+Geometry is created in the component currently activated in Fusion. When the
+root component is active, the propeller is created there. When a child
+component is active, all sketches, features, bodies, hub, rings, and spinners
+are created in that component definition. The result dialog reports the target
+component name.
+
+### Nested-component section paths
+
+Wrapped section paths are created with the active component's
+`Features.createPath` method. This preserves the component/assembly context of
+3D sketch curves owned by nested components.
+
+If a failed run commits only one timeline item, no standard timeline group is
+attempted because Fusion requires at least two items. The final message reports
+that condition without an additional API traceback.

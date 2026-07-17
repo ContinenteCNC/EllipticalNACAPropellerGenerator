@@ -8,9 +8,10 @@ varied across releases. Detection therefore uses three layers:
 2. Windows LCID integer mapping;
 3. normalized enum-name text matching.
 
-The optional Interface_Language value in propeller_config.json overrides
-automatic detection. English is the fallback language, and every locale JSON
-must contain exactly the same key set.
+The optional Interface_Language value is read from the first available
+configuration source: user configuration, legacy configuration, then factory
+defaults. English is the fallback language, and every locale JSON must contain
+exactly the same key set.
 """
 
 from __future__ import annotations
@@ -90,14 +91,25 @@ def _normalize_override(value: object) -> str:
     return _LOCALE_ALIASES.get(normalized, normalized if normalized in SUPPORTED_LOCALES else "auto")
 
 
-def _read_override(config_path: str) -> str:
-    try:
-        with open(config_path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-        if isinstance(data, dict):
-            return _normalize_override(data.get("Interface_Language", "auto"))
-    except Exception:
-        pass
+def _read_override(config_paths) -> str:
+    """Read the first valid Interface_Language value from ordered paths."""
+    if isinstance(config_paths, (str, os.PathLike)):
+        config_paths = (config_paths,)
+
+    for config_path in config_paths:
+        try:
+            with open(config_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if (
+                isinstance(data, dict)
+                and "Interface_Language" in data
+            ):
+                return _normalize_override(
+                    data.get("Interface_Language", "auto")
+                )
+        except Exception:
+            continue
+
     return "auto"
 
 
@@ -162,9 +174,12 @@ class Localizer:
             return template
 
 
-def create_localizer(app, base_directory: str, config_filename: str) -> Localizer:
-    config_path = os.path.join(base_directory, config_filename)
-    override = _read_override(config_path)
+def create_localizer(
+    app,
+    base_directory: str,
+    config_paths,
+) -> Localizer:
+    override = _read_override(config_paths)
     locale_code = override if override != "auto" else _detect_fusion_locale(app)
     if locale_code not in SUPPORTED_LOCALES:
         locale_code = DEFAULT_LOCALE

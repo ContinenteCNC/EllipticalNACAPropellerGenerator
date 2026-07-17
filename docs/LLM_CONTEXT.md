@@ -3,7 +3,7 @@
 ## Project identity
 
 - Name: Elliptical NACA Propeller Generator
-- Version: 0.20.0
+- Version: 0.21.0
 - Previous development name: `PropellerFlatSections`
 - Fusion add-in UUID: `e9d0f388-6b7d-4fb7-88fb-cdbba6743fd6`
 - Maintainer: Bruno Martins
@@ -49,7 +49,8 @@ The uppercase JSON names are the public names of this Fusion project.
 - `EllipticalNACAPropellerGenerator.py`: all Autodesk Fusion API work.
 - `propeller_math.py`: upstream equations and section coordinates.
 - `localization.py`: language selection and fallback.
-- `propeller_config.json`: editable defaults.
+- `propeller_defaults.json`: immutable distributed defaults.
+- external `propeller_user_config.json`: last validated user settings.
 - `locales/*.json`: translated strings.
 
 ## Non-negotiable conventions
@@ -72,18 +73,22 @@ The uppercase JSON names are the public names of this Fusion project.
 Version 0.19 intentionally changed the dialog from:
 
 ```text
-initial: 980 x 900 px
-minimum: 820 x 720 px
+initial: 460 x 620 px
+minimum: 360 x 400 px
 ```
 
-to:
+to the v0.19 compact width, then v0.21 reduced the height:
 
 ```text
-initial: 360 x 900 px
-minimum: 300 x 720 px
+initial: 360 x 500 px
+minimum: 300 x 300 px
 ```
 
-Do not restore the former width without a specific usability reason.
+Do not restore the former width or height without a specific usability reason.
+Restore Factory Defaults is deliberately the first full-width control. Generate automatically saves validated settings to the external user JSON. The native OK button is
+localized as Generate.
+
+Version 0.21 intentionally relies on Fusion's normal persistence of user-resized dialogs after establishing a safe 460 x 620 px initial size.
 
 ## Construction order
 
@@ -145,3 +150,77 @@ When `Airfoil_Ring_Chord == 0`, resolve:
 ```text
 min(20, 0.5 * Propeller_Diameter * Max_Chord_Fraction)
 ```
+
+
+## Version 0.21 dialog organization
+
+The visible groups are deliberately ordered as:
+
+```text
+Restore factory defaults
+Propeller Geometry
+Airfoil Profiles
+Hub
+Resolution
+Tip Ring
+Spinner
+Display and Diagnostics
+Advanced Construction
+```
+
+The JSON schema remains backward compatible. The GUI maps one Tip Ring
+checkbox/type selector back to `Hoop` or `Airfoil_Ring`, and one Spinner
+checkbox/type selector back to `Parabolic_Spinner_Yes` or
+`Ogive_Spinner_Yes`. Only one type in each family can be generated per run.
+
+When loading an older JSON that enables both types in a family, the first
+legacy type is selected: rectangular ring for Tip Ring and parabolic for
+Spinner.
+
+
+## Version 0.21 configuration persistence
+
+Configuration is layered:
+
+```text
+propeller_defaults.json
+-> external propeller_user_config.json
+-> legacy propeller_config.json only during migration
+```
+
+Generate validates and resolves the radial distribution, writes the user
+configuration atomically, then begins B-Rep construction. A later geometry
+failure therefore does not discard the parameter set being diagnosed.
+
+The restore button applies factory values to every current command input and
+deletes both the external user file and any legacy in-package override.
+
+## Version 0.21 timeline grouping
+
+Do not create TimelineGroups inside `Command.execute`. Features created there
+are still inside the command transaction and may not yet appear in
+`Timeline.count`.
+
+Capture the starting index before geometry, queue the result, and create the
+group from the global `UserInterface.commandTerminated` handler. Only after
+that should the result message be displayed. Every unavailable or failed
+grouping path must be reported; never return silently.
+
+The visible command name is `<localized name> — v0.21.0`.
+
+For timeline grouping, never use truthiness checks on `Design`, `Timeline`, or `TimelineGroup`. Use explicit `is None` and `isValid` checks so a valid empty timeline is not mistaken for a missing one.
+
+## Version 0.21 active component
+
+All generated geometry uses `Design.activeComponent`, never an unconditional
+`Design.rootComponent`. Resolve the active component once, validate it, and
+pass the same component through every geometry operation.
+
+## Version 0.21 nested-component paths
+
+Do not use static `adsk.fusion.Path.create` for the wrapped section curves.
+Use `component.features.createPath(curves, False)` so sketch curves created in
+an active child component retain their owning component context.
+
+Before calling `TimelineGroups.add`, require at least two newly committed
+timeline items. A single partial sketch cannot form a standard timeline group.
