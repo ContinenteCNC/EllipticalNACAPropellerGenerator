@@ -1,0 +1,18 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "addin",
+  "id": "c740d8d0-6599-44bd-aca0-b0f305317c24",
+  "author": "Bruno Martins",
+  "description": {
+    "": "Compact multilingual Autodesk Fusion generator for parametric elliptical NACA propellers.",
+    "1033": "Compact multilingual Autodesk Fusion generator for parametric elliptical NACA propellers.",
+    "1046": "Gerador compacto e multilíngue de hélices NACA elípticas paramétricas para Autodesk Fusion.",
+    "1034": "Generador compacto y multilingüe de hélices NACA elípticas paramétricas para Autodesk Fusion.",
+    "1036": "Générateur compact et multilingue d’hélices NACA elliptiques paramétriques pour Autodesk Fusion.",
+    "1031": "Kompakter mehrsprachiger Generator für parametrische elliptische NACA-Propeller in Autodesk Fusion.",
+    "1049": "Компактный многоязычный генератор параметрических эллиптических пропеллеров NACA для Autodesk Fusion."
+  },
+  "version": "0.20.0",
+  "runOnStartup": false,
+  "supportedOS": "windows|mac"
+}
