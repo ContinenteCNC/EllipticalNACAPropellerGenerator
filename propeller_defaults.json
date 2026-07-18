@@ -33,6 +33,7 @@
   "Apply_Geometric_Angle": true,
   "Section_Mode": "wrapped_3d",
   "Create_Surface_Loft": true,
+  "Loft_Construction_Mode": "split_trailing_edge",
   "Extend_Surface_Ends": true,
   "Surface_Extension_mm": 0.1,
   "Create_Limit_Cylinders": true,
@@ -68,5 +69,17 @@
   "Airfoil_Ring_Diameter": 76.2,
   "Airfoil_Ring_Axial_Offset": 0.0,
   "Airfoil_Ring_TE_Thickness": 0.4,
-  "Airfoil_Ring_Profile_Points": 20
+  "Airfoil_Ring_Profile_Points": 20,
+  "Loft_Section_Order": "root_to_tip",
+  "Loft_Guide_Rails": "none",
+  "Loft_Merge_Tangent_Edges": true,
+  "Blade_Finalization_Method": "boundary_fill",
+  "Boundary_Fill_Diameter_Overlap_mm": 0.1,
+  "Loft_Distributed_Rail_Count": 9,
+  "Loft_Distributed_Rails_Use_TE_Vertices": false,
+  "Loft_Quality_Check": true,
+  "Loft_Quality_Max_Deviation_Percent": 0.1,
+  "Loft_Distributed_Rail_Placement": "uniform_chord",
+  "Loft_Quality_Max_Wave_Angle_Deg": 0.2,
+  "Loft_Quality_Post_Fairing_Margin_Multiplier": 2.0
 }

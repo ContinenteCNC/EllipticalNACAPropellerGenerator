@@ -3,7 +3,14 @@
 This roadmap records planned ideas after the first stable release. It is not a
 guarantee of dates or final implementation details.
 
-## v1.1 — Adaptive radial section distribution
+## v1.1 — Configuration library (implemented)
+
+Version 1.1 provides a dynamically discovered `configurations/` directory and a GUI
+drop-down. Any valid JSON file added under that directory appears the next time
+the command opens. The initial library contains five configurations adapted
+from the original OpenSCAD `demo_collection()` module.
+
+## v1.2 — Adaptive radial section distribution
 
 Goal: place more section profiles where blade geometry changes rapidly and
 fewer profiles where it varies smoothly.
@@ -26,8 +33,8 @@ Proposed direction:
 4. Convert that metric into a requested section spacing bounded by:
    - minimum section spacing;
    - maximum section spacing.
-5. Start conservatively near the root and clamp every calculated spacing to
-   the configured limits.
+5. Begin from the configured minimum spacing near the root and clamp every
+   calculated spacing to the minimum/maximum limits.
 6. Always insert mandatory locations exactly:
    - root;
    - profile transition point;
@@ -46,55 +53,9 @@ Open design questions:
 - How should the algorithm avoid excessive profile counts around numerical
   noise?
 
-## v1.2 — Sample configuration library
-
-Goal: provide useful starting points without replacing the user's saved
-configuration or factory defaults.
-
-Proposed repository structure:
-
-```text
-samples/
-├── basic_two_blade.json
-├── basic_three_blade.json
-├── rectangular_tip_ring.json
-├── aerodynamic_naca_ring.json
-├── parabolic_spinner.json
-└── rounded_ogive_spinner.json
-```
-
-Proposed GUI:
-
-```text
-Sample configuration: [ Basic two-blade propeller ▼ ]
-[ Load sample ]
-```
-
-Loading a sample should:
-
-- populate the current dialog;
-- not generate geometry automatically;
-- not change immutable factory defaults;
-- not overwrite the saved user configuration until **Generate** is pressed;
-- display a short sample description;
-- validate the same public parameter schema used by normal configuration.
-
-A future sample format may include metadata:
-
-```json
-{
-  "Sample_Name": "Basic two-blade propeller",
-  "Sample_Description": "A simple starting point for a compact propeller.",
-  "Schema_Version": 1,
-  "Parameters": {
-    "Number_of_Blades": 2
-  }
-}
-```
-
 ## Later possibilities
 
-- schema-version migration for user configurations and samples;
+- schema-version migration for user configurations;
 - import/export buttons for sharing configurations;
 - optional geometric quality diagnostics;
 - automated regression models for representative configurations.

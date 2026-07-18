@@ -7,7 +7,7 @@ A multilingual Autodesk Fusion add-in for generating complete parametric
 propellers with elliptical blade planforms and smoothly transitioning NACA
 4-digit airfoils.
 
-Current release: **v1.0.0**
+Current release: **v1.1.0**
 
 ## Features
 
@@ -21,8 +21,11 @@ Current release: **v1.0.0**
 - Native Fusion surface loft, exact radial trims and stitched B-Rep solid.
 - Hub, shaft hole, rectangular hoop, aerodynamic NACA ring, and optional parabolic or ogive spinner.
 - Portuguese, English, Spanish, French, German and Russian interface.
-- Automatic persistence of validated parameters, with immutable factory defaults.
-- Compact dialog using collapsible groups and per-run timeline organization.
+- Automatic persistence of validated parameters, with immutable distributed defaults.
+- Native **Generate** action closes the command after each committed run.
+- Built-in and user-created JSON configurations, plus detailed manual-run JSON logs.
+- Validated split trailing-edge loft with pre-Stitch XY trimming and Boundary Fill.
+- Compact dialog using collapsible groups, per-run timeline organization, manual progress, and automatically discovered JSON configurations.
 
 ## Installation
 
@@ -89,6 +92,7 @@ were separately confirmed.
 - `propeller_math.py`: pure Python implementation of the upstream equations.
 - `localization.py` and `locales/`: interface localization.
 - `propeller_defaults.json`: immutable factory defaults.
+- `configurations/`: bundled configurations; user configurations are stored per-user.
 - `docs/GEOMETRY.md`: equations and coordinate conventions.
 - `docs/FUSION_API_PIPELINE.md`: B-Rep construction sequence.
 - `docs/LLM_CONTEXT.md`: compact maintainer context for humans and LLMs.
@@ -148,7 +152,7 @@ Every validated parameter is saved automatically when **Generate** is pressed,
 before Fusion starts constructing geometry. The immutable factory values remain
 in `propeller_defaults.json`.
 
-The last user configuration is stored outside the repository and add-in
+The last generated configuration is stored outside the repository and add-in
 installation:
 
 ```text
@@ -156,15 +160,33 @@ Windows: %APPDATA%\EllipticalNACAPropellerGenerator\propeller_user_config.json
 macOS:   ~/Library/Application Support/EllipticalNACAPropellerGenerator/propeller_user_config.json
 ```
 
-Use **Restore factory defaults** to reload the distributed values and remove
-the saved user configuration. Restoring defaults does not generate geometry.
+It is restored when the command is opened again, including after Fusion is
+restarted. Closing the dialog without generating does not save unexecuted
+edits. The former factory-default action is now the built-in **3 × 1.25-inch
+propeller — original configuration**, so every starting point is loaded through
+the same Configurations workflow.
 
-### Timeline organization
+### Generation, progress and timeline organization
 
-In parametric designs, each generation run is grouped only after Fusion fires
-the global `commandTerminated` event, when the command transaction has ended
-and its new timeline items are available. Groups are collapsed and named
-sequentially:
+Version 1.1 uses Fusion's native **Generate** (OK) action. A successful or
+handled manual run terminates the command, commits its single transaction, and
+then displays the result. Open the command again for another run; the last
+validated configuration is restored automatically.
+
+Manual generation displays a separate cancelable progress dialog with the
+current geometry stage. Automatic robust keeps its independent legacy/research
+progress dialog. Cancellation is cooperative: a long Fusion kernel operation
+finishes before the next checkpoint can observe the request.
+
+The manual checkpoints call `adsk.doEvents()`, so the viewport and timeline can
+show features as they are created. An earlier release candidate omitted these
+UI checkpoints and therefore refreshed mostly at the end; that could feel
+faster because it performed fewer redraws, but provided less useful feedback.
+Progress text is wrapped to bounded-width lines so late-stage details do not
+expand the dialog across the screen.
+
+Only after the command transaction is committed are the new timeline items
+grouped, collapsed, and named sequentially:
 
 ```text
 Elliptical NACA Propeller 01
@@ -172,11 +194,10 @@ Elliptical NACA Propeller 02
 ...
 ```
 
-The final generation message is also delayed until this post-commit step, so it
-always reports whether grouping succeeded, failed, or was intentionally
-skipped. The visible command name includes the current version.
-
-Timeline API objects are checked explicitly with `is None` and `isValid`, so a valid empty timeline on the first run is accepted.
+The result message reports whether grouping succeeded, failed, or was skipped.
+Grouping is performed by the global `commandTerminated` handler after commit;
+this prevents later command cancellation from reverting visibility changes or
+removing the group.
 
 ### Active component
 
@@ -203,8 +224,192 @@ v0.21 codebase without changing the propeller mathematics or intended
 geometry.
 
 The release includes active-component generation, post-transaction timeline
-groups, automatic parameter persistence, factory-default restoration,
-multilingual controls, tip-ring alternatives, and spinner alternatives.
+groups, automatic parameter persistence, multilingual controls, tip-ring
+alternatives, and spinner alternatives.
 
 See [docs/RELEASE_NOTES_v1.0.0.md](docs/RELEASE_NOTES_v1.0.0.md) for the
 release notes and [docs/ROADMAP.md](docs/ROADMAP.md) for planned development.
+
+## Configurations
+
+Version 1.1 discovers configurations from both the bundled
+`configurations/` directory and a persistent per-user `configurations/`
+directory. The **Configurations** group starts expanded. Existing user JSON
+files under the former `samples/` directory are copied into the new directory
+on first discovery without overwriting newer files.
+
+The dialog can save the complete current configuration as a new user
+configuration. The list refreshes immediately without restarting the command.
+Loading a configuration fills the dialog but does not generate geometry or
+overwrite the saved last-run configuration until **Generate** is pressed. The
+former factory-default action is available as the built-in **3 × 1.25-inch
+propeller — original configuration**.
+
+Both metadata-wrapped and normal flat configuration JSON files are accepted.
+See `configurations/README.md` for the schemas and storage locations.
+
+### Validated split trailing-edge construction
+
+The five design configurations validated in Fusion use the v1.1 defaults:
+
+```text
+Loft construction: Open main surface + separate trailing edge
+Loft section order: Root to tip
+Loft guides: None
+Boundary overlap — diameter: 0.1 mm
+```
+
+The open NACA surface is lofted without the trailing-edge closure. A second
+narrow loft closes the trailing edge and always uses two rails through the exact
+trailing-edge vertices. When base cutting is requested, both surfaces are
+trimmed by the XY plane before Stitch. Boundary Fill then uses the stitched
+shell, the inner and outer cylinders, and the XY plane.
+
+Closed-profile construction, distributed main-surface rails, reverse section
+order, legacy finalization, and Automatic robust remain available as advanced
+or compatibility options.
+
+### Refreshing the version in Scripts and Add-Ins
+
+Fusion reads the version shown before an add-in runs from the `.manifest`
+file. Stop the add-in, replace the entire add-in folder—including the
+manifest—and restart Fusion. Replacing only the Python file can leave the old
+version visible in the Scripts and Add-Ins dialog.
+
+### Boundary Fill solid finalization
+
+Boundary Fill is now the default blade-solid workflow. The root section is
+placed radially inward and the tip section radially outward by half of the
+configured diameter overlap (default `0.1 mm`). Chord, pitch, sweep and
+section interpolation still use the nominal radii. Nominal inner and outer
+cylindrical surfaces plus the blade loft define the available cells. The add-in
+selects the positive-volume cell with the largest volume and verifies that the
+feature produced exactly one solid body.
+
+In manual **Open main surface + separate trailing edge** construction, the
+open NACA contour and the trailing-edge closure are lofted separately. The
+trailing-edge loft always uses two rails through the exact trailing-edge
+vertices. When `Cut_Below_Hub_Base` is enabled, both source surfaces are
+trimmed together by the global XY plane before Stitch. Boundary Fill then uses
+the stitched open shell, the nominal inner/outer cylinders, and the XY plane.
+The XY plane is also included when there is no material below `Z=0`.
+
+The closed-profile construction and the previous extend/trim/stitch workflow
+remain as legacy Advanced Construction options.
+
+### Distributed loft rails
+
+Advanced Construction includes **Distributed profile rails**. The temporary
+test policy is:
+
+- accepted counts: `3, 5, 7, 9...`;
+- temporary default: `9`;
+- two rails anchor the upper and lower trailing-edge regions;
+- one rail always follows the leading edge;
+- every additional pair is distributed symmetrically over the upper and lower
+  surfaces.
+
+A temporary checkbox selects whether the first pair uses the exact
+trailing-edge vertices or the first NACA profile points after those vertices.
+The unchecked/default state uses the first points after the vertices. With
+`N = Profile_Points`, the maximum is `2N+1` in vertex mode and `2N-1` in
+first-point mode.
+
+Manual Root-to-tip or Tip-to-root mode uses exactly the requested count.
+Automatic robust mode starts without rails and then tries the odd progression
+`3 -> 5 -> 7 -> 9 -> ... -> requested`, omitting duplicates and values above the request.
+Dual trailing-edge rails remain an explicit experimental mode.
+
+Generated spacing and slice distributions do not insert a mandatory station at
+`Transition_Point`. The mid NACA profile still controls continuous
+interpolation, but it does not create an unusually short loft interval.
+
+The factory default and all bundled configurations use a Boundary Fill diameter overlap of `0.1 mm`, matching the validated v1.1 workflow.
+Existing user overrides remain unchanged until **Generate** is pressed with a
+new set of validated values.
+
+### Automatic robust full-chain search and surface-quality metric
+
+Automatic robust now evaluates complete candidates in isolated temporary
+components before generating the accepted strategy in the active component.
+For each loft direction and tangent-edge state it tests rail counts
+`0, 3, 5, 7, 9...` through the selected maximum. A candidate must:
+
+1. create a valid surface loft;
+2. pass the theoretical-to-loft surface-quality threshold;
+3. complete Boundary Fill when solid finalization is requested.
+
+Quality is measured at the midpoint of every interior interval between section
+profiles. The three worst intervals are also sampled at 25% and 75%. The global
+maximum deviation, normalized by local chord, decides acceptance; RMS is
+reported only as supporting diagnostics. This catches a wavy region even when
+only half of the blade is affected.
+
+```json
+{
+  "Loft_Quality_Check": true,
+  "Loft_Quality_Max_Deviation_Percent": 0.1
+}
+```
+
+The 0.1 value is a temporary 0.1%-of-local-chord calibration threshold. After a
+loft passes quality, Boundary Fill starts with the configured overlap and
+rebuilds the candidate at 10× increments up to a 0.1 mm diameter overlap.
+
+### Part Design compatibility
+
+Fusion's Part Design intent supports a single component. Robust preflight
+therefore uses two isolation strategies:
+
+- **Hybrid Design:** each candidate is created in a disposable hidden child
+  component;
+- **Part or Assembly Design:** each candidate is created in the active
+  component, then removed by comparing entity tokens with a snapshot captured
+  immediately before the attempt.
+
+Cleanup runs in dependency order: Boundary Fill, cylinder extrusions, loft,
+rail/section sketches, and orphan bodies. A cleanup mismatch aborts the search
+instead of silently leaving diagnostic geometry in the user's model.
+
+### Uniform-chord rails and wave-angle quality
+
+The recommended placement is **Uniform along chord**. One rail follows the
+leading edge and the remaining rails are paired at equal x/c locations on the
+upper and lower surfaces.
+
+Automatic robust treats the rail count as an upper limit but searches at least
+`0 -> 3 -> 5 -> 7 -> 9` whenever resolution permits. Quality approval requires
+both positional deviation and estimated short-period wave angle. The factory
+wave-angle limit is `0.2°`.
+
+### Cancelable robust search and diagnostic logs
+
+Automatic robust displays a native Fusion progress dialog with a **Cancel
+search** button. Cancellation is cooperative: it is checked while sections and
+quality samples are being created and between kernel operations. A single long
+Fusion kernel call must return before cancellation can be honored.
+
+Every robust search writes two files under the per-user configuration folder:
+
+```text
+robust_search_logs/robust_search_<UTC timestamp>_<session>.json
+robust_search_logs/robust_search_<UTC timestamp>_<session>.txt
+```
+
+The JSON file is intended for machine comparison. The text file contains the
+same information in a readable form. Both retain all started candidates,
+including partial cancelled attempts, stage timings, quality values, Boundary
+Fill volumes, errors, and cleanup results.
+
+### Progress-dialog behavior
+
+The progress maximum counts distinct loft strategies only:
+
+```text
+section order × rail count × merge-tangent state
+```
+
+Boundary Fill overlap retries remain separate log attempts but do not inflate
+the displayed strategy total. Closing the progress window is interpreted as
+cancellation after it has appeared. The dialog shows compact status text; full
+kernel messages remain in the saved logs.

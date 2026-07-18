@@ -4,15 +4,15 @@
   "id": "c740d8d0-6599-44bd-aca0-b0f305317c24",
   "author": "Bruno Martins",
   "description": {
-    "": "Compact multilingual Autodesk Fusion generator for parametric elliptical NACA propellers.",
-    "1033": "Compact multilingual Autodesk Fusion generator for parametric elliptical NACA propellers.",
-    "1046": "Gerador compacto e multilíngue de hélices NACA elípticas paramétricas para Autodesk Fusion.",
-    "1034": "Generador compacto y multilingüe de hélices NACA elípticas paramétricas para Autodesk Fusion.",
-    "1036": "Générateur compact et multilingue d’hélices NACA elliptiques paramétriques pour Autodesk Fusion.",
-    "1031": "Kompakter mehrsprachiger Generator für parametrische elliptische NACA-Propeller in Autodesk Fusion.",
-    "1049": "Компактный многоязычный генератор параметрических эллиптических пропеллеров NACA для Autodesk Fusion."
+    "": "Multilingual Autodesk Fusion generator for parametric elliptical NACA propellers, with a highly stable split trailing-edge workflow, persistent configurations, progress, and detailed logs.",
+    "1033": "Multilingual Autodesk Fusion generator for parametric elliptical NACA propellers, with a highly stable split trailing-edge workflow, persistent configurations, progress, and detailed logs.",
+    "1046": "Gerador multilíngue de hélices NACA elípticas paramétricas para Autodesk Fusion, com fluxo estável de loft dividido no bordo de fuga, configurações persistentes, progresso e logs detalhados.",
+    "1034": "Generador multilingüe de hélices NACA elípticas paramétricas para Autodesk Fusion, con flujo estable de loft separado del borde de fuga, configuraciones persistentes, progreso y registros detallados.",
+    "1036": "Générateur multilingue d’hélices NACA elliptiques paramétriques pour Autodesk Fusion, avec workflow stable de bord de fuite séparé, configurations persistantes, progression et journaux détaillés.",
+    "1031": "Mehrsprachiger Generator für parametrische elliptische NACA-Propeller in Autodesk Fusion mit stabilem getrenntem Hinterkanten-Workflow, persistenten Konfigurationen, Fortschritt und detaillierten Protokollen.",
+    "1049": "Многоязычный генератор параметрических эллиптических пропеллеров NACA для Autodesk Fusion со стабильным раздельным лофтом задней кромки, постоянными конфигурациями, прогрессом и подробными журналами."
   },
-  "version": "1.0.0",
+  "version": "1.1.0",
   "runOnStartup": false,
   "supportedOS": "windows|mac"
 }

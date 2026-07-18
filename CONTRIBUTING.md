@@ -44,3 +44,13 @@ At minimum:
 - Preserve the add-in UUID unless intentionally creating a separate add-in.
 - Package one top-level `EllipticalNACAPropellerGenerator` folder.
 - Do not include `__pycache__`, `.pyc` or temporary JSON files.
+
+## Adding configurations
+
+Add any valid `.json` file under `configurations/` or one of its subdirectories. The
+add-in discovers it automatically the next time the command opens.
+
+Prefer the metadata-wrapper format documented in `configurations/README.md`. Keep
+configuration names unique, provide a concise description, and include only public
+configuration keys inside `Parameters`. A configuration must not set
+`Interface_Language`.

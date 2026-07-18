@@ -125,3 +125,31 @@ axial  = axial_offset + chord * (1 - airfoil_x)
 Thus the trailing edge lies at the axial offset and the rounded leading edge
 is approximately one chord in +Z. The reference diameter is not the body's
 outside diameter.
+
+## Nominal and physical end radii
+
+For Boundary Fill, aerodynamic geometry is evaluated at the nominal radius.
+Only the cylindrical placement changes:
+
+```text
+root wrap radius = root nominal radius - overlap_diameter / 2
+tip wrap radius  = tip nominal radius  + overlap_diameter / 2
+```
+
+The angular map still divides tangential distance by the nominal radius. This
+makes the overlap a purely radial perturbation. The planar trailing-edge closing
+segment is sampled before wrapping and becomes a second 3D fitted spline.
+
+## Radial stations and Transition_Point
+
+`Transition_Point` is a continuous NACA interpolation boundary, not a required
+geometric station. Spacing mode now creates its regular root-origin grid and
+adds only the exact tip. Slice mode returns exactly `slices + 1` stations.
+
+The exact transition radius can still appear naturally when it coincides with
+the regular grid or when the user includes it in Manual radii.
+
+## Rail positions by normalized chord
+
+With `2m+1` rails, the leading edge is constrained and each surface receives
+`m` rails at `x/c = 1/(m+1), ..., m/(m+1)`.

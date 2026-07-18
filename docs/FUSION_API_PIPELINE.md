@@ -1,67 +1,94 @@
 # Fusion API construction pipeline
 
-## 1. Section sketches
+## 1. Wrapped section sketches
 
-Each wrapped section is a 3D fitted spline plus a 3D line closing the trailing
-edge. A closed `Path` is created for loft input.
+Each radial station creates two independent 3D fitted splines:
 
-## 2. Surface loft
+- the open wrapped NACA contour;
+- the wrapped trailing-edge closing segment.
 
-Fusion creates an open surface loft through the section paths. The current
-implementation adds sections from tip to root because that order proved more
-robust with a heavily thickened root profile.
+The open contour intentionally excludes the trailing-edge closure.
 
-## 3. Natural extension
+## 2. Main surface loft
 
-The free root and tip boundary loops are extended slightly. This guarantees
-that later analytical cylindrical trims intersect cleanly at the requested
-radii.
+The validated manual default lofts the open NACA contours from root to tip with
+no guide rails. Optional main-surface guides remain available as advanced
+controls.
 
-## 4. Analytical limit cylinders
+## 3. Separate trailing-edge loft
 
-Open circular profiles are extruded as cylindrical surfaces at:
+A second narrow surface loft joins the trailing-edge closing splines. It always
+uses two rails passing through the exact upper and lower trailing-edge vertices
+of every section.
+
+Separating this surface avoids the self-intersection failures observed when the
+closing segment was part of one closed loft path.
+
+## 4. Optional XY Trim before Stitch
+
+When `Cut_Below_Hub_Base` is enabled, the code checks both source surfaces. If
+either crosses below `Z=0`, one Trim operation uses the global XY plane to
+remove the lower pieces before the surfaces are stitched.
+
+## 5. Stitch
+
+The main surface and trailing-edge surface are stitched up to the configured
+tolerance. After an XY Trim, a deliberate opening can remain at the blade base.
+
+## 6. Analytical limit cylinders
+
+Open circular profiles are extruded as cylindrical surfaces at the nominal
+root and tip radii:
 
 ```text
 R = Hub_Diameter / 2
 R = Propeller_Diameter / 2
 ```
 
-## 5. Trim operations
+The configured Boundary Fill diameter overlap shifts only the first and last
+loft-section construction radii. Aerodynamic calculations remain at nominal
+radii.
 
-The blade surface trims the cylinders into small cap patches. The cylinders
-then trim the blade back to the exact root and tip radii.
+## 7. Boundary Fill
 
-Fusion exposes multiple B-Rep cells. The code selects cells by area and average
-radius instead of relying on unstable collection ordering.
+The validated split workflow supplies:
 
-## 6. Stitch
+- the stitched blade shell;
+- the inner cylindrical surface;
+- the outer cylindrical surface;
+- the global XY plane.
 
-The trimmed blade surface and two cylindrical caps are stitched. The result is
-verified to be a solid B-Rep body.
-
-## 7. Printable base and position
-
-The blade is split by the global XY plane and all geometry below `Z=0` is
-removed. `Prop_Z_Offset` is then applied.
+The XY plane is included whenever base cutting is enabled, even when neither
+surface crosses it. The largest positive-volume cell is selected and verified
+as one solid body.
 
 ## 8. Assembly
 
 ```text
-single blade
+single solid blade
+-> optional Z offset
 -> circular blade pattern
 -> hub with shaft hole
--> optional hoop
--> optional parabolic and/or ogive spinner
+-> optional rectangular or aerodynamic ring
+-> optional parabolic or ogive spinner based at Z = Hub_Length
 -> Join operations
 ```
 
-Optional features that do not intersect can remain as separate bodies, with a
+Optional features that cannot be joined may remain as separate bodies with a
 diagnostic message.
 
-## API pitfalls already encountered
+## Legacy and automatic paths
+
+Closed-profile loft construction and the former extend/trim/stitch finalization
+remain available for compatibility. Automatic robust mode remains an advanced
+closed-profile preflight path in v1.1.
+
+## API pitfalls already handled
 
 - Fusion internal lengths are centimetres.
 - Construction object `isVisible` is read-only; use `isLightBulbOn`.
 - Trim inputs begin a partial transaction and must be cancelled when abandoned.
 - Event handlers must be retained in a module-level list.
-- Pattern and combine result body ordering must not be assumed.
+- Pattern, Stitch, Combine, and Boundary Fill result ordering must not be
+  assumed.
+- Transient `Path` wrappers are recreated between robust candidates.

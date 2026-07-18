@@ -48,3 +48,13 @@ The Fusion project adds:
 
 The original author is credited because the blade and spinner mathematics are
 derived from his work. No affiliation or endorsement is implied.
+
+## v1.1 configuration lineage
+
+The five JSON files initially distributed in `configurations/` are parameter
+adaptations of the five examples assembled by `module demo_collection()` in
+the upstream `elliptical_propblade.scad`. OpenSCAD scene translations, colors,
+and rotations are not configuration parameters and are not reproduced. Hub,
+bore, spinner, automatic profile-point, and slice values are mapped to the
+closest native Fusion generator controls and documented in each configuration's
+`Source` metadata.

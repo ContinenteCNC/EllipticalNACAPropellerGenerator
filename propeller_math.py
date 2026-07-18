@@ -168,12 +168,20 @@ class SectionGeometry:
 @dataclass(frozen=True)
 class WrappedSectionGeometry:
     radius_mm: float
+    wrap_radius_mm: float
     chord_mm: float
     geometric_angle_deg: float
     applied_angle_deg: float
     sweep_origin_deg: float
     profile_points_per_surface: int
     points_xyz_mm: tuple[tuple[float, float, float], ...]
+    closing_points_xyz_mm: tuple[tuple[float, float, float], ...]
+    angular_min_deg: float
+    angular_max_deg: float
+
+    @property
+    def maximum_absolute_angle_deg(self) -> float:
+        return max(abs(self.angular_min_deg), abs(self.angular_max_deg))
 
 
 def normalize_naca_code(code: Any) -> str:
@@ -508,25 +516,20 @@ def _sorted_unique_radii(
     return unique
 
 
-def _radii_with_special_sections(
+def _radii_with_required_endpoints(
     config: BladeConfig,
     base_radii: Sequence[float],
 ) -> list[float]:
-    """Inclui raiz, transição NACA e ponta exatamente, sem duplicatas."""
+    """Include the exact root and tip without forcing an extra transition station.
+
+    Mid_NACA_Airfoil and Transition_Point still define the continuous profile
+    interpolation. The transition radius is no longer inserted as an
+    additional loft section because a locally short radial interval can make
+    Fusion's section correspondence less stable.
+    """
     values = list(base_radii)
     values.append(config.root_radius_mm)
     values.append(config.tip_radius_mm)
-
-    transition_radius_mm = (
-        config.root_radius_mm
-        + config.blade_length_mm * config.transition_point
-    )
-    if (
-        transition_radius_mm > config.root_radius_mm + 1e-9
-        and transition_radius_mm < config.tip_radius_mm - 1e-9
-    ):
-        values.append(transition_radius_mm)
-
     return validate_radii(config, _sorted_unique_radii(values))
 
 
@@ -535,11 +538,11 @@ def section_radii_from_spacing(
     spacing_mm: float,
     maximum_sections: int = 1000,
 ) -> list[float]:
-    """Gera seções a partir da raiz com espaçamento radial aproximadamente constante.
+    """Generate sections from the root at approximately constant spacing.
 
-    A ponta e o raio exato da transição são acrescentados mesmo quando não
-    coincidem com a malha regular. Por isso o último intervalo pode ser menor
-    e a quantidade final pode exceder em uma unidade a estimativa simples.
+    The exact root and tip are always present. Transition_Point remains a
+    profile-interpolation parameter and does not force an extra loft station.
+    The last interval can therefore be shorter than ``spacing_mm``.
     """
     spacing_mm = float(spacing_mm)
     if not math.isfinite(spacing_mm) or spacing_mm <= 0.0:
@@ -562,7 +565,7 @@ def section_radii_from_spacing(
         values.append(radius_mm)
         index += 1
 
-    result = _radii_with_special_sections(config, values)
+    result = _radii_with_required_endpoints(config, values)
     if len(result) > maximum_sections:
         raise ValueError(
             f'A distribuição resultou em {len(result)} seções; '
@@ -576,17 +579,17 @@ def section_radii_from_slices(
     slices: int,
     maximum_sections: int = 1000,
 ) -> list[float]:
-    """Divide o comprimento radial em ``slices`` intervalos iguais.
+    """Divide the radial blade length into ``slices`` equal intervals.
 
-    A malha-base contém ``slices + 1`` seções. O raio exato da transição NACA
-    é incluído adicionalmente quando não coincide com uma dessas seções.
+    The result contains exactly ``slices + 1`` stations. Transition_Point
+    controls continuous NACA interpolation but does not add another station.
     """
     slices = int(slices)
     if slices < 1:
         raise ValueError('Slices deve ser pelo menos 1.')
-    if slices + 2 > maximum_sections:
+    if slices + 1 > maximum_sections:
         raise ValueError(
-            f'Slices={slices} pode exceder o limite de {maximum_sections} seções.'
+            f'Slices={slices} excede o limite de {maximum_sections} seções.'
         )
 
     step_mm = config.blade_length_mm / slices
@@ -594,7 +597,7 @@ def section_radii_from_slices(
         config.root_radius_mm + step_mm * index
         for index in range(slices + 1)
     ]
-    result = _radii_with_special_sections(config, values)
+    result = _radii_with_required_endpoints(config, values)
     if len(result) > maximum_sections:
         raise ValueError(
             f'A distribuição resultou em {len(result)} seções; '
@@ -682,32 +685,27 @@ def wrapped_section_geometry(
     radius_mm: float,
     apply_geometric_angle: bool = True,
     profile_points_override: int | None = None,
+    wrap_radius_mm: float | None = None,
 ) -> WrappedSectionGeometry:
-    """Map a planar section onto its cylindrical surface around the Z axis.
+    """Wrap a closed planar section around the Z axis.
 
-    Chordwise displacement becomes azimuth, section height remains axial Z and
-    Sweep_Angle rotates the section origin around the shaft. The cylindrical
-    radius must remain exactly ``radius_mm`` for every returned point.
-    """
-    """Enrola a seção plana sobre um cilindro coaxial ao eixo Z.
+    ``radius_mm`` is the nominal aerodynamic radius used for chord, pitch,
+    sweep and angular mapping. ``wrap_radius_mm`` changes only the physical
+    radial placement of the generated 3D curves. This separation allows the
+    root and tip to overlap nominal limit cylinders by an infinitesimal amount
+    without changing the section's aerodynamic definition.
 
-    Convenção desta primeira implementação no Fusion:
-      * eixo da hélice: Z;
-      * direção radial de referência da primeira pá: +Y;
-      * X plano é tratado como comprimento de arco tangencial;
-      * em X=0 e Sweep_Angle=0, o ponto fica em (0, +R, Z).
-
-    A transformação é:
-        theta = X_plano/R + theta_sweep
-        X_3D = R*sin(theta)
-        Y_3D = R*cos(theta)
-        Z_3D = Z_plano
-
-    Assim, próximo da direção +Y, um deslocamento tangencial positivo no perfil
-    plano continua aparecendo no sentido +X global.
+    The planar trailing-edge closing segment is sampled before wrapping and
+    becomes a second 3D fitted curve on the same cylindrical surface.
     """
     if radius_mm <= 0.0:
-        raise ValueError("O raio deve ser positivo para enrolar a seção.")
+        raise ValueError("O raio nominal deve ser positivo para enrolar a seção.")
+
+    physical_radius_mm = (
+        radius_mm if wrap_radius_mm is None else float(wrap_radius_mm)
+    )
+    if physical_radius_mm <= 0.0:
+        raise ValueError("O raio físico de enrolamento deve ser positivo.")
 
     flat = section_geometry(
         config,
@@ -719,33 +717,87 @@ def wrapped_section_geometry(
     sweep_origin_deg = sweep_origin_angle_deg(config, radius_mm)
     sweep_origin_rad = math.radians(sweep_origin_deg)
 
-    points_xyz: list[tuple[float, float, float]] = []
-    for tangential_mm, axial_mm in flat.points_mm:
+    def wrap_point(
+        point_mm: tuple[float, float],
+    ) -> tuple[float, float, float]:
+        tangential_mm, axial_mm = point_mm
+        # Deliberately divide by the nominal radius. The overlap offset must be
+        # a purely radial displacement and must not perturb the section angle.
         theta = tangential_mm / radius_mm + sweep_origin_rad
-        x_mm = radius_mm * math.sin(theta)
-        y_mm = radius_mm * math.cos(theta)
-        z_mm = axial_mm
-        points_xyz.append((x_mm, y_mm, z_mm))
+        return (
+            physical_radius_mm * math.sin(theta),
+            physical_radius_mm * math.cos(theta),
+            axial_mm,
+        )
 
-    # Verificação interna: todos os pontos da spline devem estar sobre o
-    # cilindro de raio solicitado. A reta que fecha o BF será criada depois e
-    # pode atravessar ligeiramente o interior do cilindro.
+    points_xyz = tuple(wrap_point(point) for point in flat.points_mm)
+
+    # Close the contour in the planar section first. The straight planar
+    # segment maps to a helix-like curve on the cylinder. Use at least four
+    # fit points and no more than 64, targeting about two angular degrees per
+    # segment. Endpoints exactly match the NACA contour's TE endpoints.
+    closing_start = flat.points_mm[-1]
+    closing_end = flat.points_mm[0]
+    closing_angular_span_deg = abs(
+        math.degrees((closing_end[0] - closing_start[0]) / radius_mm)
+    )
+    closing_segment_count = max(
+        3,
+        min(
+            63,
+            int(math.ceil(closing_angular_span_deg / 2.0)),
+        ),
+    )
+    closing_flat_points = tuple(
+        (
+            interpolate(
+                closing_start[0],
+                closing_end[0],
+                index / closing_segment_count,
+            ),
+            interpolate(
+                closing_start[1],
+                closing_end[1],
+                index / closing_segment_count,
+            ),
+        )
+        for index in range(closing_segment_count + 1)
+    )
+    closing_points_xyz = tuple(
+        wrap_point(point) for point in closing_flat_points
+    )
+
+    all_points_xyz = points_xyz + closing_points_xyz
     max_radius_error = max(
-        abs(math.hypot(x_mm, y_mm) - radius_mm)
-        for x_mm, y_mm, _ in points_xyz
+        abs(math.hypot(x_mm, y_mm) - physical_radius_mm)
+        for x_mm, y_mm, _ in all_points_xyz
     )
     if max_radius_error > 1e-9:
         raise RuntimeError(
             "Falha interna ao enrolar a seção: os pontos não permaneceram "
-            f"no cilindro R={radius_mm:g} mm."
+            f"no cilindro R={physical_radius_mm:g} mm."
         )
+
+    # Diagnostic relative to the local sweep origin. Sweep is a rigid rotation
+    # and does not affect how much of the circumference the root occupies.
+    angular_values_deg = tuple(
+        math.degrees(tangential_mm / radius_mm)
+        for tangential_mm, _ in flat.points_mm
+    ) + tuple(
+        math.degrees(tangential_mm / radius_mm)
+        for tangential_mm, _ in closing_flat_points
+    )
 
     return WrappedSectionGeometry(
         radius_mm=radius_mm,
+        wrap_radius_mm=physical_radius_mm,
         chord_mm=flat.chord_mm,
         geometric_angle_deg=flat.geometric_angle_deg,
         applied_angle_deg=flat.applied_angle_deg,
         sweep_origin_deg=sweep_origin_deg,
         profile_points_per_surface=flat.profile_points_per_surface,
-        points_xyz_mm=tuple(points_xyz),
+        points_xyz_mm=points_xyz,
+        closing_points_xyz_mm=closing_points_xyz,
+        angular_min_deg=min(angular_values_deg),
+        angular_max_deg=max(angular_values_deg),
     )
