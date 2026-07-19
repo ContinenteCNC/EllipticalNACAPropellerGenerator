@@ -35,13 +35,13 @@ Fusion add-ins directory, then restart Fusion.
 Windows:
 
 ```text
-%appdata%\Autodesk\Autodesk Fusion\API\AddIns
+%appdata%\Autodesk\Autodesk Fusion 360\API\AddIns
 ```
 
 macOS:
 
 ```text
-~/Library/Application Support/Autodesk/Autodesk Fusion/API/AddIns
+~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns
 ```
 
 The folder, Python entry file and manifest share the same base name:
