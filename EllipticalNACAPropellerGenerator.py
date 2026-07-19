@@ -215,7 +215,7 @@ _t = _LOCALIZER.text
 ACTIVE_LOCALE = _LOCALIZER.locale_code
 
 PROJECT_NAME = "Elliptical NACA Propeller Generator"
-PROJECT_VERSION = "1.1.1"
+PROJECT_VERSION = "1.1.2"
 UPSTREAM_SOURCES = {
     "thingiverse": "https://www.thingiverse.com/thing:5300828",
     "printables": (

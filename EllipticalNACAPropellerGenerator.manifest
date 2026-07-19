@@ -12,7 +12,7 @@
     "1031": "Mehrsprachiger Generator für parametrische elliptische NACA-Propeller in Autodesk Fusion mit stabilem getrenntem Hinterkanten-Workflow, persistenten Konfigurationen, Fortschritt und detaillierten Protokollen.",
     "1049": "Многоязычный генератор параметрических эллиптических пропеллеров NACA для Autodesk Fusion со стабильным раздельным лофтом задней кромки, постоянными конфигурациями, прогрессом и подробными журналами."
   },
-  "version": "1.1.1",
+  "version": "1.1.2",
   "runOnStartup": false,
   "supportedOS": "windows|mac"
 }

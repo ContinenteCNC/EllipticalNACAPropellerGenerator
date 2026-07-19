@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2 — 2026-07-19
+
+- Added `examples/Examples.f3d`, an Autodesk Fusion document containing the models generated from all bundled configurations.
+- Added `examples/README.md` to clarify that the Fusion document is an optional reference and is not required for add-in execution.
+- Moved the generated examples document out of the repository root into the dedicated `examples/` directory.
+- No geometry-generation behavior or configuration values changed in this maintenance release.
+
 ## 1.1.1 — 2026-07-19
 
 - Moved the `flipped_180` orientation so it acts on the first blade immediately after Boundary Fill, before patterning and before hub/spinner creation, matching `demo_boatpropblades()`.

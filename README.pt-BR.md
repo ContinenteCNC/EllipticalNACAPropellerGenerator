@@ -7,7 +7,7 @@ Add-in multilíngue para Autodesk Fusion que gera hélices paramétricas
 completas, com planta elíptica e transições suaves entre aerofólios NACA de
 quatro dígitos.
 
-Versão atual: **v1.1.1**
+Versão atual: **v1.1.2**
 
 ## Recursos
 
@@ -94,6 +94,7 @@ confirmados.
 - `localization.py` e `locales/`: localização da interface.
 - `propeller_defaults.json`: padrões originais imutáveis.
 - `configurations/`: configurações distribuídas; configurações do usuário ficam na pasta por usuário.
+- `examples/Examples.f3d`: documento do Fusion contendo todas as configurações distribuídas já geradas como modelos.
 - `docs/GEOMETRY.md`: fórmulas e convenções de coordenadas.
 - `docs/FUSION_API_PIPELINE.md`: sequência de construção B-Rep.
 - `docs/LLM_CONTEXT.md`: contexto compacto para manutenção humana ou por LLM.

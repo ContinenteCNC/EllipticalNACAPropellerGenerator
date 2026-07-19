@@ -7,7 +7,7 @@ A multilingual Autodesk Fusion add-in for generating complete parametric
 propellers with elliptical blade planforms and smoothly transitioning NACA
 4-digit airfoils.
 
-Current release: **v1.1.1**
+Current release: **v1.1.2**
 
 ## Features
 
@@ -93,6 +93,7 @@ were separately confirmed.
 - `localization.py` and `locales/`: interface localization.
 - `propeller_defaults.json`: immutable factory defaults.
 - `configurations/`: bundled configurations; user configurations are stored per-user.
+- `examples/Examples.f3d`: Fusion document containing all bundled configurations generated as models.
 - `docs/GEOMETRY.md`: equations and coordinate conventions.
 - `docs/FUSION_API_PIPELINE.md`: B-Rep construction sequence.
 - `docs/LLM_CONTEXT.md`: compact maintainer context for humans and LLMs.

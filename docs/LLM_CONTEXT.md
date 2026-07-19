@@ -3,7 +3,7 @@
 ## Project identity
 
 - Name: Elliptical NACA Propeller Generator
-- Version: 1.1.1
+- Version: 1.1.2
 - Previous development name: `PropellerFlatSections`
 - Fusion add-in UUID: `e9d0f388-6b7d-4fb7-88fb-cdbba6743fd6`
 - Maintainer: Bruno Martins
@@ -206,7 +206,7 @@ flush while the command remains active: later termination can otherwise revert
 visibility changes and delete the timeline group. Every unavailable or failed
 grouping path must be reported; never return silently.
 
-The visible command name is `<localized name> — v1.1.1`.
+The visible command name is `<localized name> — v1.1.2`.
 
 For timeline grouping, never use truthiness checks on `Design`, `Timeline`, or `TimelineGroup`. Use explicit `is None` and `isValid` checks so a valid empty timeline is not mistaken for a missing one.
 
@@ -427,3 +427,7 @@ each run. Manual checkpoints call `adsk.doEvents()` for real-time progress, but
 progress messages must remain bounded in width. All real GUI parameters
 serialize to the per-user last-run JSON. User configurations and detailed
 manual-generation JSON logs are stored outside the add-in installation.
+
+## Generated reference document
+
+`examples/Examples.f3d` contains the models generated from all bundled configurations. It is optional for add-in execution and should be updated only when the reference models materially change.
