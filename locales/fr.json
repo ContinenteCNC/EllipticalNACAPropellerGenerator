@@ -358,5 +358,19 @@
   "progress.manual.stage_detail_complete": "Finalisation des résultats et diagnostics.",
   "result.manual_generation_cancelled": "La génération manuelle a été annulée. Les opérations déjà créées ont été conservées pour inspection.\n\n{detail}",
   "common.not_available": "non disponible",
-  "result.timeline_group_not_started": "Le regroupement de la chronologie ne s’appliquait pas, car la création de la géométrie n’avait pas encore commencé."
+  "result.timeline_group_not_started": "Le regroupement de la chronologie ne s’appliquait pas, car la création de la géométrie n’avait pas encore commencé.",
+  "ui.propeller_orientation": "Orientation finale de l’hélice (Propeller_Orientation)",
+  "ui.propeller_orientation_tooltip": "Réoriente rigidement l’assemblage terminé sans modifier Prop_Direction, Sweep_Angle ni le pas.",
+  "propeller_orientation.standard": "Standard — base du moyeu à Z=0, ogive vers +Z",
+  "propeller_orientation.flipped_180": "Retournée à 180° — orientation d’hélice marine",
+  "feature.final_orientation_flipped": "Orientation finale — retournement de 180° à Root_Length={root_length:.3f} mm",
+  "result.final_orientation_applied": "Orientation finale de 180° appliquée à {count} corps solide(s).",
+  "result.final_orientation_fail": "L’orientation finale de l’hélice n’a pas été terminée.\nDétails : {detail}",
+  "result.loft_component_fail": "Le flux à bord de fuite séparé a échoué pendant : {stage}. Les fonctions partielles ont été conservées.\nDétails : {detail}",
+  "loft_stage.main_surface_loft": "loft de la surface principale ouverte",
+  "loft_stage.trailing_edge_loft": "loft séparé du bord de fuite",
+  "loft_stage.surface_trim": "Trim des surfaces sur XY avant Stitch",
+  "loft_stage.surface_stitch": "couture des surfaces",
+  "progress.manual.stage.orientation": "Application de l’orientation finale",
+  "progress.manual.stage_detail_orientation": "Inversion de la pale de 180° selon Root_Length avant de créer le motif, le moyeu et l’ogive."
 }

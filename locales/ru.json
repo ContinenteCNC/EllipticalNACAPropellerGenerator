@@ -358,5 +358,19 @@
   "progress.manual.stage_detail_complete": "Завершение результатов и диагностики.",
   "result.manual_generation_cancelled": "Ручное создание отменено. Уже созданные операции сохранены для проверки.\n\n{detail}",
   "common.not_available": "недоступно",
-  "result.timeline_group_not_started": "Группировка временной шкалы не применялась, поскольку создание геометрии ещё не началось."
+  "result.timeline_group_not_started": "Группировка временной шкалы не применялась, поскольку создание геометрии ещё не началось.",
+  "ui.propeller_orientation": "Итоговая ориентация винта (Propeller_Orientation)",
+  "ui.propeller_orientation_tooltip": "Жёстко переориентирует готовую сборку, не изменяя Prop_Direction, Sweep_Angle или шаг.",
+  "propeller_orientation.standard": "Стандартная — основание ступицы Z=0, кок в сторону +Z",
+  "propeller_orientation.flipped_180": "Перевёрнута на 180° — ориентация судового винта",
+  "feature.final_orientation_flipped": "Итоговая ориентация — поворот на 180° при Root_Length={root_length:.3f} мм",
+  "result.final_orientation_applied": "Итоговый поворот на 180° применён к {count} твёрдым телам.",
+  "result.final_orientation_fail": "Не удалось завершить итоговую ориентацию винта.\nПодробности: {detail}",
+  "result.loft_component_fail": "Схема с отдельной задней кромкой завершилась ошибкой на этапе: {stage}. Частичные операции сохранены.\nПодробности: {detail}",
+  "loft_stage.main_surface_loft": "лофт открытой основной поверхности",
+  "loft_stage.trailing_edge_loft": "отдельный лофт задней кромки",
+  "loft_stage.surface_trim": "обрезка поверхностей по XY перед сшивкой",
+  "loft_stage.surface_stitch": "сшивка поверхностей",
+  "progress.manual.stage.orientation": "Применение итоговой ориентации",
+  "progress.manual.stage_detail_orientation": "Лопасть переворачивается на 180° относительно Root_Length до создания массива, ступицы и кока."
 }

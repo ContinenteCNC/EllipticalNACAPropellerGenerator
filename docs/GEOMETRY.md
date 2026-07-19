@@ -153,3 +153,12 @@ the regular grid or when the user includes it in Manual radii.
 
 With `2m+1` rails, the leading edge is constrained and each surface receives
 `m` rails at `x/c = 1/(m+1), ..., m/(m+1)`.
+
+## Propeller direction, sweep, and final orientation
+
+`Prop_Direction` already multiplies the effective sweep sign, matching the
+OpenSCAD equations. Do not manually negate `Sweep_Angle` when changing
+`Prop_Direction`. `Propeller_Orientation` is independent. Its `flipped_180`
+mode is applied only after the assembly is complete and maps
+`(x, y, z)` to `(x, -y, Root_Length-z)`, reproducing
+`translate([0,0,Root_Length]) rotate([180,0,0])`. OpenSCAD `hublen` maps to `Root_Length` in this add-in.

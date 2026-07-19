@@ -358,5 +358,19 @@
   "progress.manual.stage_detail_complete": "Finalizando resultados e diagnósticos.",
   "result.manual_generation_cancelled": "A geração manual foi cancelada. Os recursos já criados foram preservados para inspeção.\n\n{detail}",
   "common.not_available": "não disponível",
-  "result.timeline_group_not_started": "O agrupamento da linha do tempo não se aplicava porque a criação da geometria ainda não havia começado."
+  "result.timeline_group_not_started": "O agrupamento da linha do tempo não se aplicava porque a criação da geometria ainda não havia começado.",
+  "ui.propeller_orientation": "Orientação final da hélice (Propeller_Orientation)",
+  "ui.propeller_orientation_tooltip": "Reorienta rigidamente a montagem concluída. Não altera Prop_Direction, Sweep_Angle nem o passo.",
+  "propeller_orientation.standard": "Padrão — base do hub em Z=0, spinner para +Z",
+  "propeller_orientation.flipped_180": "Invertida 180° — orientação de hélice de barco",
+  "feature.final_orientation_flipped": "Orientação final — inversão de 180° em Root_Length={root_length:.3f} mm",
+  "result.final_orientation_applied": "Orientação final de 180° aplicada a {count} corpo(s) sólido(s).",
+  "result.final_orientation_fail": "A orientação final da hélice não foi concluída.\nDetalhes: {detail}",
+  "result.loft_component_fail": "O fluxo de bordo de fuga separado falhou na etapa: {stage}. Os recursos parciais foram preservados para inspeção.\nDetalhes: {detail}",
+  "loft_stage.main_surface_loft": "loft da superfície principal aberta",
+  "loft_stage.trailing_edge_loft": "loft separado do bordo de fuga",
+  "loft_stage.surface_trim": "Trim das superfícies em XY antes do Stitch",
+  "loft_stage.surface_stitch": "costura das superfícies",
+  "progress.manual.stage.orientation": "Aplicando a orientação final",
+  "progress.manual.stage_detail_orientation": "Invertendo a pá em 180° pela referência de Root_Length antes de criar o padrão, o hub e o spinner."
 }

@@ -358,5 +358,19 @@
   "progress.manual.stage_detail_complete": "Ergebnisse und Diagnose werden abgeschlossen.",
   "result.manual_generation_cancelled": "Die manuelle Erzeugung wurde abgebrochen. Bereits erstellte Elemente bleiben zur Prüfung erhalten.\n\n{detail}",
   "common.not_available": "nicht verfügbar",
-  "result.timeline_group_not_started": "Die Gruppierung der Zeitleiste war nicht anwendbar, weil die Geometrieerstellung noch nicht begonnen hatte."
+  "result.timeline_group_not_started": "Die Gruppierung der Zeitleiste war nicht anwendbar, weil die Geometrieerstellung noch nicht begonnen hatte.",
+  "ui.propeller_orientation": "Endausrichtung des Propellers (Propeller_Orientation)",
+  "ui.propeller_orientation_tooltip": "Richtet die fertige Baugruppe starr neu aus. Prop_Direction, Sweep_Angle und Steigung bleiben unverändert.",
+  "propeller_orientation.standard": "Standard — Nabenbasis bei Z=0, Spinner nach +Z",
+  "propeller_orientation.flipped_180": "Um 180° gedreht — Bootspropeller-Ausrichtung",
+  "feature.final_orientation_flipped": "Endausrichtung — 180°-Drehung bei Root_Length={root_length:.3f} mm",
+  "result.final_orientation_applied": "180°-Endausrichtung auf {count} Volumenkörper angewendet.",
+  "result.final_orientation_fail": "Die Endausrichtung des Propellers wurde nicht abgeschlossen.\nDetails: {detail}",
+  "result.loft_component_fail": "Der Workflow mit separater Hinterkante schlug in folgender Stufe fehl: {stage}. Teil-Features blieben erhalten.\nDetails: {detail}",
+  "loft_stage.main_surface_loft": "Loft der offenen Hauptfläche",
+  "loft_stage.trailing_edge_loft": "separater Hinterkanten-Loft",
+  "loft_stage.surface_trim": "XY-Flächentrimmung vor dem Stitch",
+  "loft_stage.surface_stitch": "Flächen-Stitch",
+  "progress.manual.stage.orientation": "Endausrichtung wird angewendet",
+  "progress.manual.stage_detail_orientation": "Das Blatt wird vor Muster, Nabe und Spinner um 180° an der Root_Length-Referenz gedreht."
 }

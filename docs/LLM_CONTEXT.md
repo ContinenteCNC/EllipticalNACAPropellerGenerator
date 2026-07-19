@@ -3,7 +3,7 @@
 ## Project identity
 
 - Name: Elliptical NACA Propeller Generator
-- Version: 1.1.0
+- Version: 1.1.1
 - Previous development name: `PropellerFlatSections`
 - Fusion add-in UUID: `e9d0f388-6b7d-4fb7-88fb-cdbba6743fd6`
 - Maintainer: Bruno Martins
@@ -206,7 +206,7 @@ flush while the command remains active: later termination can otherwise revert
 visibility changes and delete the timeline group. Every unavailable or failed
 grouping path must be reported; never return silently.
 
-The visible command name is `<localized name> — v1.1.0`.
+The visible command name is `<localized name> — v1.1.1`.
 
 For timeline grouping, never use truthiness checks on `Design`, `Timeline`, or `TimelineGroup`. Use explicit `is None` and `isValid` checks so a valid empty timeline is not mistaken for a missing one.
 

@@ -64,7 +64,7 @@
     "Create_Limit_Cylinders": true,
     "Cylinder_Axial_Margin_mm": 1.0,
     "Finalize_Solid": true,
-    "Stitch_Tolerance_mm": 0.01,
+    "Stitch_Tolerance_mm": 0.1,
     "Hide_Created_Sketches": true,
     "Number_of_Blades": 2,
     "Hub_Length": 5.0,
@@ -105,6 +105,7 @@
     "Loft_Quality_Max_Deviation_Percent": 0.1,
     "Loft_Distributed_Rail_Placement": "uniform_chord",
     "Loft_Quality_Max_Wave_Angle_Deg": 0.2,
-    "Loft_Quality_Post_Fairing_Margin_Multiplier": 2.0
+    "Loft_Quality_Post_Fairing_Margin_Multiplier": 2.0,
+    "Propeller_Orientation": "standard"
   }
 }

@@ -7,7 +7,7 @@ Add-in multilíngue para Autodesk Fusion que gera hélices paramétricas
 completas, com planta elíptica e transições suaves entre aerofólios NACA de
 quatro dígitos.
 
-Versão atual: **v1.1.0**
+Versão atual: **v1.1.1**
 
 ## Recursos
 

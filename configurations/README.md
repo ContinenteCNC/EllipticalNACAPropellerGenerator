@@ -83,3 +83,17 @@ Automatic mode may additionally use:
 
 Automatic mode treats the distributed-rail count as a search upper bound and
 keeps a true maximum of 15 executed candidates, including overlap variants.
+
+## Final orientation
+
+Every configuration should explicitly include:
+
+```json
+"Propeller_Orientation": "standard"
+```
+
+Use `"flipped_180"` to reproduce the final transform used by
+`demo_boatpropblades()`: `translate([0,0,Root_Length]) rotate([180,0,0])`.
+This is a rigid assembly transform and does not change `Prop_Direction`,
+`Sweep_Angle`, or geometric pitch. The validated default Stitch tolerance is
+`0.1 mm`.

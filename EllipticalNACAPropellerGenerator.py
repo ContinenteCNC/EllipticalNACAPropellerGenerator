@@ -68,9 +68,11 @@ IMPORTANT CONVENTIONS FOR MAINTAINERS AND LLMS
   Fusion.
 * The first blade uses the Fusion coordinate system documented in
   docs/GEOMETRY.md. Do not change signs by visual intuition alone.
-* Sweep_Angle intentionally has an extra sign inversion when mapped from the
-  final OpenSCAD orientation to the Fusion orientation. This was experimentally
-  verified; see sweep_origin_angle_deg().
+* Sweep_Angle keeps the experimentally validated Fusion/OpenSCAD mapping in
+  sweep_origin_angle_deg(). Prop_Direction already mirrors the effective sweep,
+  so callers must not negate Sweep_Angle when changing propeller direction.
+* Propeller_Orientation is a rigid final-assembly transform. It must not alter
+  Prop_Direction, Sweep_Angle, pitch, or any blade-generation equation.
 * Root_Length is the upstream propblade() axial root constraint named hublen.
 * The aerodynamic ring reproduces the NACA airfoil ring demonstrated in
   the original Thingiverse OpenSCAD demo_random() module.
@@ -213,7 +215,7 @@ _t = _LOCALIZER.text
 ACTIVE_LOCALE = _LOCALIZER.locale_code
 
 PROJECT_NAME = "Elliptical NACA Propeller Generator"
-PROJECT_VERSION = "1.1.0"
+PROJECT_VERSION = "1.1.1"
 UPSTREAM_SOURCES = {
     "thingiverse": "https://www.thingiverse.com/thing:5300828",
     "printables": (
@@ -897,6 +899,9 @@ def _collect_final_assembly_parameters(
     hub_length_mm = _value_input_mm(inputs, "hubLength")
     hole_diameter_mm = _value_input_mm(inputs, "holeDiameter")
     prop_z_offset_mm = _value_input_mm(inputs, "propZOffset")
+    propeller_orientation = _propeller_orientation_from_display(
+        _selected_dropdown_name(inputs, "propellerOrientation")
+    )
 
     create_tip_ring = bool(
         _required_command_input(inputs, "createTipRing").value
@@ -1042,6 +1047,7 @@ def _collect_final_assembly_parameters(
         "hub_length_mm": hub_length_mm,
         "hole_diameter_mm": hole_diameter_mm,
         "prop_z_offset_mm": prop_z_offset_mm,
+        "propeller_orientation": propeller_orientation,
         "cut_below_hub_base": bool(
             _required_command_input(inputs, "cutBelowHubBase").value
         ),
@@ -1086,6 +1092,9 @@ def _collect_final_assembly_parameters(
 LOFT_CONSTRUCTION_CLOSED = "closed_profile"
 LOFT_CONSTRUCTION_SPLIT_TRAILING_EDGE = "split_trailing_edge"
 
+PROPELLER_ORIENTATION_STANDARD = "standard"
+PROPELLER_ORIENTATION_FLIPPED_180 = "flipped_180"
+
 
 # =============================================================================
 # PERSISTED PRESETS AND DIALOG STATE
@@ -1096,6 +1105,43 @@ LOFT_CONSTRUCTION_SPLIT_TRAILING_EDGE = "split_trailing_edge"
 # Interface_Language is preserved because localization is selected before the
 # dialog exists.
 # =============================================================================
+
+
+def _normalize_propeller_orientation(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    if normalized in {
+        "flipped_180",
+        "flipped",
+        "flip_180",
+        "boat",
+        "boat_propeller",
+        "inverted_180",
+    }:
+        return PROPELLER_ORIENTATION_FLIPPED_180
+    return PROPELLER_ORIENTATION_STANDARD
+
+
+def _propeller_orientation_to_storage(value: str) -> str:
+    normalized = _normalize_propeller_orientation(value)
+    if normalized == PROPELLER_ORIENTATION_FLIPPED_180:
+        return "flipped_180"
+    return "standard"
+
+
+def _propeller_orientation_display(value: str) -> str:
+    normalized = _normalize_propeller_orientation(value)
+    if normalized == PROPELLER_ORIENTATION_FLIPPED_180:
+        return PROPELLER_ORIENTATION_FLIPPED_180_DISPLAY
+    return PROPELLER_ORIENTATION_STANDARD_DISPLAY
+
+
+def _propeller_orientation_from_display(value: object) -> str:
+    text_value = str(value or "").strip()
+    if text_value == PROPELLER_ORIENTATION_FLIPPED_180_DISPLAY:
+        return PROPELLER_ORIENTATION_FLIPPED_180
+    if text_value == PROPELLER_ORIENTATION_STANDARD_DISPLAY:
+        return PROPELLER_ORIENTATION_STANDARD
+    return _normalize_propeller_orientation(text_value)
 
 
 def _radius_distribution_mode_to_storage(mode: str) -> str:
@@ -1434,6 +1480,9 @@ def _collect_current_config(
             "Hub_Length": assembly["hub_length_mm"],
             "Hole_Diameter": assembly["hole_diameter_mm"],
             "Prop_Z_Offset": assembly["prop_z_offset_mm"],
+            "Propeller_Orientation": _propeller_orientation_to_storage(
+                assembly["propeller_orientation"]
+            ),
             "Cut_Below_Hub_Base": assembly["cut_below_hub_base"],
             "Create_Blade_Pattern": assembly["create_blade_pattern"],
             "Create_Hub_And_Join": assembly["create_hub_and_join"],
@@ -1828,6 +1877,13 @@ LOFT_RAIL_PLACEMENT_VERTICES = _t(
 FINALIZATION_BOUNDARY_FILL = _t("finalization.boundary_fill")
 FINALIZATION_LEGACY = _t("finalization.legacy")
 
+PROPELLER_ORIENTATION_STANDARD_DISPLAY = _t(
+    "propeller_orientation.standard"
+)
+PROPELLER_ORIENTATION_FLIPPED_180_DISPLAY = _t(
+    "propeller_orientation.flipped_180"
+)
+
 
 def _set_value_input_mm(
     inputs: adsk.core.CommandInputs,
@@ -1928,6 +1984,13 @@ def _apply_config_to_dialog(
         inputs,
         "propZOffset",
         config.get("Prop_Z_Offset", 0.0),
+    )
+    _select_dropdown_item(
+        inputs,
+        "propellerOrientation",
+        _propeller_orientation_display(
+            config.get("Propeller_Orientation", "standard")
+        ),
     )
     _set_string_input(
         inputs,
@@ -2291,7 +2354,7 @@ def _apply_config_to_dialog(
     _set_value_input_mm(
         inputs,
         "stitchTolerance",
-        config.get("Stitch_Tolerance_mm", 0.01),
+        config.get("Stitch_Tolerance_mm", 0.1),
     )
     _set_bool_input(
         inputs,
@@ -2336,6 +2399,11 @@ class GenerationResult:
     surface_loft_name: str = ""
     surface_loft_strategy: str = ""
     surface_loft_error: str = ""
+    surface_loft_failed_stage: str = ""
+    main_surface_loft_error: str = ""
+    trailing_edge_loft_error: str = ""
+    surface_trim_error: str = ""
+    surface_stitch_error: str = ""
 
     robust_search_requested: bool = False
     robust_search_succeeded: bool = False
@@ -2416,6 +2484,12 @@ class GenerationResult:
     hub_joined: bool = False
     final_propeller_created: bool = False
     final_propeller_name: str = ""
+    final_orientation_requested: bool = False
+    final_orientation_applied: bool = False
+    final_orientation_mode: str = "standard"
+    final_orientation_angle_deg: float = 0.0
+    final_orientation_body_count: int = 0
+    final_orientation_error: str = ""
 
     hoop_requested: bool = False
     hoop_created: bool = False
@@ -5243,12 +5317,11 @@ def _run_robust_candidate(
                     trailing_edge_loft_created = True
                     surface_stitch_created = True
                 except Exception as error:
-                    message = f"{type(error).__name__}: {error}"
-                    if "costur" in str(error).lower():
-                        failed_stage = "surface_stitch"
-                    elif "bordo de fuga" in str(error).lower():
-                        failed_stage = "trailing_edge_loft"
+                    if isinstance(error, _SplitTrailingEdgeStageError):
+                        message = error.detail
+                        failed_stage = error.stage
                     else:
+                        message = f"{type(error).__name__}: {error}"
                         failed_stage = "loft"
                     stage_seconds["loft"] = (
                         time.perf_counter() - stage_started
@@ -7192,6 +7265,16 @@ def _stitch_surface_bodies(
     return stitch_feature, result_body
 
 
+class _SplitTrailingEdgeStageError(RuntimeError):
+    """Failure of one explicit stage in the split trailing-edge workflow."""
+
+    def __init__(self, stage: str, error: Exception):
+        self.stage = str(stage)
+        self.original_error = error
+        self.detail = f"{type(error).__name__}: {error}"
+        super().__init__(f"{self.stage}: {self.detail}")
+
+
 def _create_split_trailing_edge_surface_loft(
     component: adsk.fusion.Component,
     profile_paths: list[tuple[float, adsk.fusion.Path]],
@@ -7240,18 +7323,26 @@ def _create_split_trailing_edge_surface_loft(
         _t("progress.manual.stage.main_loft"),
         _t("progress.manual.stage_detail_main_loft"),
     )
-    profile_loft, strategy = _create_surface_loft(
-        component,
-        profile_paths,
-        trailing_edge_points,
-        section_profile_points,
-        requested_order,
-        requested_guides,
-        distributed_rail_count,
-        rail_placement,
-        merge_tangent_edges,
-        hide_created_sketches,
-    )
+    try:
+        profile_loft, strategy = _create_surface_loft(
+            component,
+            profile_paths,
+            trailing_edge_points,
+            section_profile_points,
+            requested_order,
+            requested_guides,
+            distributed_rail_count,
+            rail_placement,
+            merge_tangent_edges,
+            hide_created_sketches,
+        )
+    except _ManualGenerationCancelledSignal:
+        raise
+    except Exception as error:
+        raise _SplitTrailingEdgeStageError(
+            "main_surface_loft",
+            error,
+        ) from error
     profile_loft.name = "Loft principal — contorno NACA aberto"
     profile_body = _feature_first_body(
         profile_loft,
@@ -7263,18 +7354,26 @@ def _create_split_trailing_edge_surface_loft(
         _t("progress.manual.stage.trailing_edge"),
         _t("progress.manual.stage_detail_trailing_edge"),
     )
-    closing_loft, closing_strategy = _create_surface_loft(
-        component,
-        closing_paths,
-        trailing_edge_points,
-        section_profile_points,
-        requested_order,
-        LOFT_GUIDES_DUAL_TRAILING_EDGE,
-        3,
-        LOFT_RAIL_PLACEMENT_VERTICES,
-        merge_tangent_edges,
-        hide_created_sketches,
-    )
+    try:
+        closing_loft, closing_strategy = _create_surface_loft(
+            component,
+            closing_paths,
+            trailing_edge_points,
+            section_profile_points,
+            requested_order,
+            LOFT_GUIDES_DUAL_TRAILING_EDGE,
+            3,
+            LOFT_RAIL_PLACEMENT_VERTICES,
+            merge_tangent_edges,
+            hide_created_sketches,
+        )
+    except _ManualGenerationCancelledSignal:
+        raise
+    except Exception as error:
+        raise _SplitTrailingEdgeStageError(
+            "trailing_edge_loft",
+            error,
+        ) from error
     closing_loft.name = "Loft separado — fechamento do bordo de fuga"
     closing_body = _feature_first_body(
         closing_loft,
@@ -7288,29 +7387,45 @@ def _create_split_trailing_edge_surface_loft(
             _t("progress.manual.stage.trim"),
             _t("progress.manual.stage_detail_trim"),
         )
-        (
-            _base_trim_feature,
-            profile_body,
-            closing_body,
-            base_trim_applied,
-        ) = _trim_split_loft_surfaces_below_xy(
-            component,
-            profile_body,
-            closing_body,
-        )
+        try:
+            (
+                _base_trim_feature,
+                profile_body,
+                closing_body,
+                base_trim_applied,
+            ) = _trim_split_loft_surfaces_below_xy(
+                component,
+                profile_body,
+                closing_body,
+            )
+        except _ManualGenerationCancelledSignal:
+            raise
+        except Exception as error:
+            raise _SplitTrailingEdgeStageError(
+                "surface_trim",
+                error,
+            ) from error
 
     _manual_progress_checkpoint(
         62,
         _t("progress.manual.stage.stitch"),
         _t("progress.manual.stage_detail_stitch"),
     )
-    stitch_feature, stitched_body = _stitch_surface_bodies(
-        component,
-        (profile_body, closing_body),
-        stitch_tolerance_mm,
-        "Costura do loft principal com o bordo de fuga",
-        "Superfície completa da pá — bordo de fuga separado",
-    )
+    try:
+        stitch_feature, stitched_body = _stitch_surface_bodies(
+            component,
+            (profile_body, closing_body),
+            stitch_tolerance_mm,
+            "Costura do loft principal com o bordo de fuga",
+            "Superfície completa da pá — bordo de fuga separado",
+        )
+    except _ManualGenerationCancelledSignal:
+        raise
+    except Exception as error:
+        raise _SplitTrailingEdgeStageError(
+            "surface_stitch",
+            error,
+        ) from error
     return (
         profile_loft,
         closing_loft,
@@ -7605,6 +7720,14 @@ def _brep_bodies_to_list(
     return result
 
 
+def _body_identity_key(body: adsk.fusion.BRepBody) -> str:
+    try:
+        token = str(body.entityToken or "")
+    except Exception:
+        token = ""
+    return token or f"python:{id(body)}"
+
+
 def _unique_valid_solid_bodies(
     bodies: list[adsk.fusion.BRepBody],
 ) -> list[adsk.fusion.BRepBody]:
@@ -7614,11 +7737,7 @@ def _unique_valid_solid_bodies(
     for body in bodies:
         if not body or not body.isValid or not body.isSolid:
             continue
-        try:
-            token = body.entityToken
-        except Exception:
-            token = ""
-        key = token or f"python:{id(body)}"
+        key = _body_identity_key(body)
         if key in seen:
             continue
         seen.add(key)
@@ -8651,6 +8770,99 @@ def _join_hoop_and_propeller_bodies(
     return combine_feature, result_body
 
 
+def _apply_final_propeller_orientation(
+    component: adsk.fusion.Component,
+    bodies: list[adsk.fusion.BRepBody],
+    primary_body: adsk.fusion.BRepBody,
+    orientation: str,
+    root_length_mm: float,
+) -> tuple[
+    adsk.fusion.BRepBody,
+    adsk.fusion.MoveFeature | None,
+    tuple[adsk.fusion.BRepBody, ...],
+]:
+    """Apply the rigid final transform used by demo_boatpropblades().
+
+    The OpenSCAD ``hublen`` argument maps to this add-in's ``Root_Length``.
+    Therefore ``translate([0,0,Root_Length]) rotate([180,0,0])`` maps each
+    point to ``(x, -y, Root_Length-z)``. A 180-degree rotation about an
+    X-parallel axis at Z=Root_Length/2 is exactly equivalent and can be
+    committed as one native Move feature.
+    """
+    normalized = _normalize_propeller_orientation(orientation)
+    valid_bodies = _unique_valid_solid_bodies(list(bodies))
+    if normalized == PROPELLER_ORIENTATION_STANDARD:
+        return primary_body, None, tuple(valid_bodies)
+    if normalized != PROPELLER_ORIENTATION_FLIPPED_180:
+        raise ValueError(f"Orientação final desconhecida: {orientation!r}.")
+    if root_length_mm <= 0.0:
+        raise ValueError(
+            "Root_Length deve ser positivo para aplicar a orientação invertida."
+        )
+    if not valid_bodies:
+        raise RuntimeError(
+            "Não há corpos sólidos válidos para aplicar a orientação final."
+        )
+
+    entities = adsk.core.ObjectCollection.create()
+    for body in valid_bodies:
+        entities.add(body)
+
+    transform = adsk.core.Matrix3D.create()
+    axis = adsk.core.Vector3D.create(1.0, 0.0, 0.0)
+    axis_origin = adsk.core.Point3D.create(
+        0.0,
+        0.0,
+        root_length_mm / 20.0,
+    )
+    if not transform.setToRotation(math.pi, axis, axis_origin):
+        raise RuntimeError(
+            "Não foi possível preparar a matriz da orientação final."
+        )
+
+    move_features = component.features.moveFeatures
+    move_input = move_features.createInput2(entities)
+    if not move_input:
+        raise RuntimeError(
+            "Não foi possível preparar a transformação final da hélice."
+        )
+    if not move_input.defineAsFreeMove(transform):
+        raise RuntimeError(
+            "Não foi possível definir a transformação final da hélice."
+        )
+
+    move_feature = move_features.add(move_input)
+    if not move_feature:
+        raise RuntimeError(
+            "O Fusion não conseguiu aplicar a orientação final da hélice."
+        )
+    move_feature.name = _t(
+        "feature.final_orientation_flipped",
+        root_length=root_length_mm,
+    )
+
+    moved_bodies = _unique_valid_solid_bodies(
+        _feature_surface_bodies(
+            move_feature,
+            "A orientação final",
+        )
+    )
+    if not moved_bodies:
+        raise RuntimeError(
+            "A orientação final não retornou corpos sólidos válidos."
+        )
+
+    primary_name = str(getattr(primary_body, "name", "") or "")
+    moved_primary = next(
+        (
+            body for body in moved_bodies
+            if primary_name and str(body.name or "") == primary_name
+        ),
+        max(moved_bodies, key=_body_volume_or_zero),
+    )
+    return moved_primary, move_feature, tuple(moved_bodies)
+
+
 @dataclass(frozen=True)
 class _AssemblyOutcome:
     final_body: adsk.fusion.BRepBody
@@ -8663,6 +8875,11 @@ class _AssemblyOutcome:
     hub_joined: bool
     final_propeller_created: bool
     final_propeller_name: str
+    final_orientation_applied: bool
+    final_orientation_mode: str
+    final_orientation_angle_deg: float
+    final_orientation_body_count: int
+    final_orientation_error: str
     hoop_created: bool
     hoop_joined: bool
     hoop_body_name: str
@@ -8688,8 +8905,10 @@ def _assemble_propeller(
     propeller_diameter_mm: float,
     hub_diameter_mm: float,
     hub_length_mm: float,
+    root_length_mm: float,
     hole_diameter_mm: float,
     prop_z_offset_mm: float,
+    propeller_orientation: str,
     cut_below_hub_base: bool,
     create_blade_pattern: bool,
     create_hub_and_join: bool,
@@ -8717,6 +8936,37 @@ def _assemble_propeller(
     blade_body = single_blade_body
     underside_cut_completed = False
     underside_cut_applied = False
+    final_orientation_applied = False
+    final_orientation_angle_deg = 0.0
+    final_orientation_error = ""
+    final_orientation_body_count = 0
+
+    if (
+        _normalize_propeller_orientation(propeller_orientation)
+        == PROPELLER_ORIENTATION_FLIPPED_180
+    ):
+        _manual_progress_checkpoint(
+            89,
+            _t("progress.manual.stage.orientation"),
+            _t("progress.manual.stage_detail_orientation"),
+        )
+        try:
+            blade_body, orientation_feature, moved_bodies = (
+                _apply_final_propeller_orientation(
+                    component,
+                    [blade_body],
+                    blade_body,
+                    propeller_orientation,
+                    root_length_mm,
+                )
+            )
+            final_orientation_applied = orientation_feature is not None
+            final_orientation_angle_deg = 180.0
+            final_orientation_body_count = len(moved_bodies)
+        except _ManualGenerationCancelledSignal:
+            raise
+        except Exception as error:
+            final_orientation_error = f"{type(error).__name__}: {error}"
 
     if cut_below_hub_base:
         blade_body, _, underside_cut_applied = _cut_blade_below_hub_base(
@@ -8742,6 +8992,8 @@ def _assemble_propeller(
     else:
         blade_bodies = [blade_body]
         blade_pattern_created = False
+
+    orientation_bodies: list[adsk.fusion.BRepBody] = list(blade_bodies)
 
     hub_created = False
     hub_joined = False
@@ -8769,6 +9021,7 @@ def _assemble_propeller(
         final_propeller_created = True
         final_name = final_body.name
         assembly_is_single_body = True
+        orientation_bodies = [final_body]
 
     airfoil_ring_created = False
     airfoil_ring_joined = False
@@ -8796,11 +9049,16 @@ def _assemble_propeller(
             )
             airfoil_ring_created = True
             airfoil_ring_body_name = ring_body.name
+            orientation_bodies.append(ring_body)
             join_candidates = (
                 [final_body]
                 if assembly_is_single_body
                 else list(blade_bodies)
             )
+            consumed_orientation_keys = {
+                _body_identity_key(body)
+                for body in [ring_body] + join_candidates
+            }
             try:
                 _, final_body = _join_hoop_and_propeller_bodies(
                     component,
@@ -8818,6 +9076,16 @@ def _assemble_propeller(
                 )
                 final_name = final_body.name
                 airfoil_ring_body_name = final_body.name
+                orientation_bodies = [final_body] + [
+                    body
+                    for body in orientation_bodies
+                    if (
+                        body
+                        and body.isValid
+                        and _body_identity_key(body)
+                        not in consumed_orientation_keys
+                    )
+                ]
             except Exception as error:
                 airfoil_ring_error = (
                     f"{type(error).__name__}: {error}"
@@ -8844,7 +9112,12 @@ def _assemble_propeller(
             )
             parabolic_spinner_created = True
             parabolic_spinner_body_name = spinner_body.name
+            orientation_bodies.append(spinner_body)
             join_candidates = [final_body] if assembly_is_single_body else list(blade_bodies)
+            consumed_orientation_keys = {
+                _body_identity_key(body)
+                for body in [spinner_body] + join_candidates
+            }
             try:
                 _, final_body = _join_spinner_and_propeller_bodies(
                     component,
@@ -8858,6 +9131,16 @@ def _assemble_propeller(
                 final_propeller_created = True
                 final_name = final_body.name
                 parabolic_spinner_body_name = final_body.name
+                orientation_bodies = [final_body] + [
+                    body
+                    for body in orientation_bodies
+                    if (
+                        body
+                        and body.isValid
+                        and _body_identity_key(body)
+                        not in consumed_orientation_keys
+                    )
+                ]
             except Exception as error:
                 parabolic_spinner_error = f"{type(error).__name__}: {error}"
         except Exception as error:
@@ -8881,7 +9164,12 @@ def _assemble_propeller(
             )
             ogive_spinner_created = True
             ogive_spinner_body_name = spinner_body.name
+            orientation_bodies.append(spinner_body)
             join_candidates = [final_body] if assembly_is_single_body else list(blade_bodies)
+            consumed_orientation_keys = {
+                _body_identity_key(body)
+                for body in [spinner_body] + join_candidates
+            }
             try:
                 _, final_body = _join_spinner_and_propeller_bodies(
                     component,
@@ -8895,6 +9183,16 @@ def _assemble_propeller(
                 final_propeller_created = True
                 final_name = final_body.name
                 ogive_spinner_body_name = final_body.name
+                orientation_bodies = [final_body] + [
+                    body
+                    for body in orientation_bodies
+                    if (
+                        body
+                        and body.isValid
+                        and _body_identity_key(body)
+                        not in consumed_orientation_keys
+                    )
+                ]
             except Exception as error:
                 ogive_spinner_error = f"{type(error).__name__}: {error}"
         except Exception as error:
@@ -8917,7 +9215,12 @@ def _assemble_propeller(
             )
             hoop_created = True
             hoop_body_name = hoop_body.name
+            orientation_bodies.append(hoop_body)
             join_candidates = [final_body] if assembly_is_single_body else list(blade_bodies)
+            consumed_orientation_keys = {
+                _body_identity_key(body)
+                for body in [hoop_body] + join_candidates
+            }
             try:
                 _, final_body = _join_hoop_and_propeller_bodies(
                     component,
@@ -8930,10 +9233,23 @@ def _assemble_propeller(
                 final_propeller_created = True
                 final_name = final_body.name
                 hoop_body_name = final_body.name
+                orientation_bodies = [final_body] + [
+                    body
+                    for body in orientation_bodies
+                    if (
+                        body
+                        and body.isValid
+                        and _body_identity_key(body)
+                        not in consumed_orientation_keys
+                    )
+                ]
             except Exception as error:
                 hoop_error = f"{type(error).__name__}: {error}"
         except Exception as error:
             hoop_error = f"{type(error).__name__}: {error}"
+
+    if final_orientation_body_count == 0 and final_orientation_applied:
+        final_orientation_body_count = 1
 
     return _AssemblyOutcome(
         final_body=final_body,
@@ -8946,6 +9262,13 @@ def _assemble_propeller(
         hub_joined=hub_joined,
         final_propeller_created=final_propeller_created,
         final_propeller_name=final_name,
+        final_orientation_applied=final_orientation_applied,
+        final_orientation_mode=_propeller_orientation_to_storage(
+            propeller_orientation
+        ),
+        final_orientation_angle_deg=final_orientation_angle_deg,
+        final_orientation_body_count=final_orientation_body_count,
+        final_orientation_error=final_orientation_error,
         hoop_created=hoop_created,
         hoop_joined=hoop_joined,
         hoop_body_name=hoop_body_name,
@@ -9108,6 +9431,7 @@ def _generate_wrapped_sections(
     hub_length_mm: float,
     hole_diameter_mm: float,
     prop_z_offset_mm: float,
+    propeller_orientation: str,
     cut_below_hub_base: bool,
     create_blade_pattern: bool,
     create_hub_and_join: bool,
@@ -9411,21 +9735,43 @@ def _generate_wrapped_sections(
     except _ManualGenerationCancelledSignal:
         raise
     except Exception as error:
+        split_stage = (
+            error.stage
+            if isinstance(error, _SplitTrailingEdgeStageError)
+            else ""
+        )
+        base_error = (
+            error.detail
+            if isinstance(error, _SplitTrailingEdgeStageError)
+            else f"{type(error).__name__}: {error}"
+        )
+        preserved_note = (
+            "\n\nOs esboços, lofts, rails e costuras criados antes "
+            "da falha foram preservados na linha do tempo para "
+            "inspeção manual."
+            if loft_construction_mode
+            == LOFT_CONSTRUCTION_SPLIT_TRAILING_EDGE
+            else ""
+        )
+        detailed_error = base_error + preserved_note
         return GenerationResult(
             section_count=created,
             section_mode=MODE_WRAPPED,
             surface_loft_requested=True,
             surface_loft_created=False,
-            surface_loft_error=(
-                f"{type(error).__name__}: {error}"
-                + (
-                    "\n\nOs esboços, lofts, rails e costuras criados antes "
-                    "da falha foram preservados na linha do tempo para "
-                    "inspeção manual."
-                    if loft_construction_mode
-                    == LOFT_CONSTRUCTION_SPLIT_TRAILING_EDGE
-                    else ""
-                )
+            surface_loft_error=detailed_error,
+            surface_loft_failed_stage=split_stage,
+            main_surface_loft_error=(
+                detailed_error if split_stage == "main_surface_loft" else ""
+            ),
+            trailing_edge_loft_error=(
+                detailed_error if split_stage == "trailing_edge_loft" else ""
+            ),
+            surface_trim_error=(
+                detailed_error if split_stage == "surface_trim" else ""
+            ),
+            surface_stitch_error=(
+                detailed_error if split_stage == "surface_stitch" else ""
             ),
             root_wrap_min_deg=root_wrap_min_deg,
             root_wrap_max_deg=root_wrap_max_deg,
@@ -9625,6 +9971,10 @@ def _generate_wrapped_sections(
         or create_airfoil_ring
         or create_parabolic_spinner
         or create_ogive_spinner
+        or (
+            _normalize_propeller_orientation(propeller_orientation)
+            != PROPELLER_ORIENTATION_STANDARD
+        )
     )
     underside_cut_completed = False
     underside_cut_applied = False
@@ -9635,6 +9985,17 @@ def _generate_wrapped_sections(
     hub_joined = False
     final_propeller_created = False
     final_propeller_name = ""
+    final_orientation_requested = (
+        _normalize_propeller_orientation(propeller_orientation)
+        != PROPELLER_ORIENTATION_STANDARD
+    )
+    final_orientation_applied = False
+    final_orientation_mode = _propeller_orientation_to_storage(
+        propeller_orientation
+    )
+    final_orientation_angle_deg = 0.0
+    final_orientation_body_count = 0
+    final_orientation_error = ""
     hoop_created = False
     hoop_joined = False
     hoop_body_name = ""
@@ -9673,8 +10034,10 @@ def _generate_wrapped_sections(
                     config.propeller_diameter_mm,
                     config.hub_diameter_mm,
                     hub_length_mm,
+                    config.root_length_mm,
                     hole_diameter_mm,
                     prop_z_offset_mm,
+                    propeller_orientation,
                     (
                         cut_below_hub_base
                         and not split_pretrim_requested
@@ -9717,6 +10080,17 @@ def _generate_wrapped_sections(
                 hub_joined = assembly.hub_joined
                 final_propeller_created = assembly.final_propeller_created
                 final_propeller_name = assembly.final_propeller_name
+                final_orientation_applied = (
+                    assembly.final_orientation_applied
+                )
+                final_orientation_mode = assembly.final_orientation_mode
+                final_orientation_angle_deg = (
+                    assembly.final_orientation_angle_deg
+                )
+                final_orientation_body_count = (
+                    assembly.final_orientation_body_count
+                )
+                final_orientation_error = assembly.final_orientation_error
                 hoop_created = assembly.hoop_created
                 hoop_joined = assembly.hoop_joined
                 hoop_body_name = assembly.hoop_body_name
@@ -9794,6 +10168,12 @@ def _generate_wrapped_sections(
         hub_joined=hub_joined,
         final_propeller_created=final_propeller_created,
         final_propeller_name=final_propeller_name,
+        final_orientation_requested=final_orientation_requested,
+        final_orientation_applied=final_orientation_applied,
+        final_orientation_mode=final_orientation_mode,
+        final_orientation_angle_deg=final_orientation_angle_deg,
+        final_orientation_body_count=final_orientation_body_count,
+        final_orientation_error=final_orientation_error,
         hoop_requested=create_hoop,
         hoop_created=hoop_created,
         hoop_joined=hoop_joined,
@@ -9848,6 +10228,7 @@ def _generate_sections(
     hub_length_mm: float,
     hole_diameter_mm: float,
     prop_z_offset_mm: float,
+    propeller_orientation: str,
     cut_below_hub_base: bool,
     create_blade_pattern: bool,
     create_hub_and_join: bool,
@@ -10049,6 +10430,7 @@ def _generate_sections(
             hub_length_mm,
             hole_diameter_mm,
             prop_z_offset_mm,
+            propeller_orientation,
             cut_below_hub_base,
             create_blade_pattern,
             create_hub_and_join,
@@ -10681,6 +11063,7 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                 assembly_parameters["hub_length_mm"],
                 assembly_parameters["hole_diameter_mm"],
                 assembly_parameters["prop_z_offset_mm"],
+                assembly_parameters["propeller_orientation"],
                 assembly_parameters["cut_below_hub_base"],
                 assembly_parameters["create_blade_pattern"],
                 assembly_parameters["create_hub_and_join"],
@@ -10872,12 +11255,36 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                             )
                         )
                     else:
-                        lines.append(
-                            _t(
-                                "result.loft_fail",
-                                detail=result.surface_loft_error,
+                        split_stage_labels = {
+                            "main_surface_loft": _t(
+                                "loft_stage.main_surface_loft"
+                            ),
+                            "trailing_edge_loft": _t(
+                                "loft_stage.trailing_edge_loft"
+                            ),
+                            "surface_trim": _t("loft_stage.surface_trim"),
+                            "surface_stitch": _t(
+                                "loft_stage.surface_stitch"
+                            ),
+                        }
+                        if result.surface_loft_failed_stage:
+                            lines.append(
+                                _t(
+                                    "result.loft_component_fail",
+                                    stage=split_stage_labels.get(
+                                        result.surface_loft_failed_stage,
+                                        result.surface_loft_failed_stage,
+                                    ),
+                                    detail=result.surface_loft_error,
+                                )
                             )
-                        )
+                        else:
+                            lines.append(
+                                _t(
+                                    "result.loft_fail",
+                                    detail=result.surface_loft_error,
+                                )
+                            )
                 else:
                     lines.append(_t("result.loft_disabled"))
 
@@ -11140,6 +11547,25 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                                     name=result.final_propeller_name,
                                 )
                             )
+                        if result.final_orientation_requested:
+                            if result.final_orientation_applied:
+                                assembly_lines.append(
+                                    _t(
+                                        "result.final_orientation_applied",
+                                        count=(
+                                            result.final_orientation_body_count
+                                        ),
+                                    )
+                                )
+                            elif result.final_orientation_error:
+                                assembly_lines.append(
+                                    _t(
+                                        "result.final_orientation_fail",
+                                        detail=(
+                                            result.final_orientation_error
+                                        ),
+                                    )
+                                )
                         lines.append("\n".join(assembly_lines))
 
                 detail = "\n\n".join(lines)
@@ -11588,7 +12014,7 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 raw_config.get("Finalize_Solid", True)
             )
             stitch_tolerance_default_mm = float(
-                raw_config.get("Stitch_Tolerance_mm", 0.01)
+                raw_config.get("Stitch_Tolerance_mm", 0.1)
             )
             hide_sketches_default = bool(
                 raw_config.get("Hide_Created_Sketches", True)
@@ -11604,6 +12030,11 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
             )
             prop_z_offset_default_mm = float(
                 raw_config.get("Prop_Z_Offset", 0.0)
+            )
+            propeller_orientation_default = (
+                _normalize_propeller_orientation(
+                    raw_config.get("Propeller_Orientation", "standard")
+                )
             )
             cut_below_default = bool(
                 raw_config.get("Cut_Below_Hub_Base", True)
@@ -11870,6 +12301,25 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 adsk.core.ValueInput.createByString(
                     f"{prop_z_offset_default_mm:g} mm"
                 ),
+            )
+
+            orientation_input = geometry_inputs.addDropDownCommandInput(
+                "propellerOrientation",
+                _t("ui.propeller_orientation"),
+                adsk.core.DropDownStyles.TextListDropDownStyle,
+            )
+            orientation_input.listItems.add(
+                PROPELLER_ORIENTATION_STANDARD_DISPLAY,
+                propeller_orientation_default
+                == PROPELLER_ORIENTATION_STANDARD,
+            )
+            orientation_input.listItems.add(
+                PROPELLER_ORIENTATION_FLIPPED_180_DISPLAY,
+                propeller_orientation_default
+                == PROPELLER_ORIENTATION_FLIPPED_180,
+            )
+            orientation_input.tooltip = _t(
+                "ui.propeller_orientation_tooltip"
             )
             geometry_inputs.addStringValueInput(
                 "maxChordFraction",

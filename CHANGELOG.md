@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.1 — 2026-07-19
+
+- Moved the `flipped_180` orientation so it acts on the first blade immediately after Boundary Fill, before patterning and before hub/spinner creation, matching `demo_boatpropblades()`.
+- Set `Hub_Length = 25.0 mm` in `03_toy_boat_propeller.json` so the hub blends cleanly with the blade roots.
+
+- Added `Propeller_Orientation` with backward-compatible `standard` and
+  `flipped_180` values. The flipped mode reproduces
+  `translate([0,0,Root_Length]) rotate([180,0,0])` from
+  `demo_boatpropblades()` without changing `Prop_Direction`, `Sweep_Angle`,
+  pitch, or blade-generation equations.
+- Updated every bundled configuration to include the orientation field; only
+  Toy Boat Propeller uses `flipped_180`.
+- Increased the default and bundled Stitch tolerance from 0.01 mm to 0.1 mm
+  after successful validation across all examples.
+- Split manual diagnostics into main-surface loft, trailing-edge loft, XY Trim,
+  and surface Stitch failures while preserving partial Fusion features.
+
 ## 1.1.0 — 2026-07-18
 
 - Delivered a major stability improvement to native Fusion lofting and solid

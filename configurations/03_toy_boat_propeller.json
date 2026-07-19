@@ -21,8 +21,8 @@
   "Source": {
     "File": "elliptical_propblade.scad",
     "Module": "demo_collection()",
-    "Reference": "demo_boatpropblades() plus hub and ogive_spinner(8, 12)",
-    "Adaptation_Notes": "The original blade flip/translation is omitted because the Fusion generator uses its own hub-base convention. Automatic profilepoints were converted to 48."
+    "Reference": "demo_boatpropblades(), including the final 180-degree flip, plus hub and ogive_spinner(8, 12)",
+    "Adaptation_Notes": "The final orientation reproduces translate([0,0,hublen]) rotate([180,0,0]) on the blade only; the hub and spinner are created afterward in the standard orientation. OpenSCAD hublen maps to Root_Length=25 mm, and Hub_Length is also set to 25 mm for a cleaner blend with the blade roots. Automatic profilepoints were converted to 48."
   },
   "Parameters": {
     "Prop_Z_Offset": 0.0,
@@ -37,7 +37,7 @@
     "Create_Limit_Cylinders": true,
     "Cylinder_Axial_Margin_mm": 1.0,
     "Finalize_Solid": true,
-    "Stitch_Tolerance_mm": 0.01,
+    "Stitch_Tolerance_mm": 0.1,
     "Hide_Created_Sketches": true,
     "Hoop": false,
     "Airfoil_Ring": false,
@@ -49,7 +49,7 @@
     "Blade_Pitch": 60.0,
     "Max_Chord_Fraction": 0.7,
     "Root_Length": 25.0,
-    "Hub_Length": 24.0,
+    "Hub_Length": 25.0,
     "Hole_Diameter": 0.0,
     "Elen_Fraction": 1.001,
     "Prop_Direction": -1,
@@ -76,6 +76,7 @@
     "Loft_Quality_Max_Wave_Angle_Deg": 0.2,
     "Loft_Construction_Mode": "split_trailing_edge",
     "Loft_Section_Order": "root_to_tip",
-    "Loft_Guide_Rails": "none"
+    "Loft_Guide_Rails": "none",
+    "Propeller_Orientation": "flipped_180"
   }
 }

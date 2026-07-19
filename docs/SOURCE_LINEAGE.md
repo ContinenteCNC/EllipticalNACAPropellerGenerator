@@ -51,10 +51,14 @@ derived from his work. No affiliation or endorsement is implied.
 
 ## v1.1 configuration lineage
 
-The five JSON files initially distributed in `configurations/` are parameter
-adaptations of the five examples assembled by `module demo_collection()` in
-the upstream `elliptical_propblade.scad`. OpenSCAD scene translations, colors,
-and rotations are not configuration parameters and are not reproduced. Hub,
-bore, spinner, automatic profile-point, and slice values are mapped to the
-closest native Fusion generator controls and documented in each configuration's
-`Source` metadata.
+Five bundled JSON configurations are parameter adaptations of the five examples
+assembled by `module demo_collection()` in the upstream
+`elliptical_propblade.scad`; a sixth file preserves the generator's original
+3 × 1.25-inch factory configuration. OpenSCAD scene translations, colors, and
+rotations are generally not reproduced. The deliberate exception is
+`demo_boatpropblades()`: its final
+`translate([0,0,hublen]) rotate([180,0,0])` is exposed as
+`Propeller_Orientation="flipped_180"`, with upstream `hublen` mapped to the
+add-in's `Root_Length`. Hub, bore, spinner, automatic profile-point, and slice
+values are mapped to the closest native Fusion generator controls and documented
+in each configuration's `Source` metadata.

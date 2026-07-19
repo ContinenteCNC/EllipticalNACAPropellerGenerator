@@ -37,7 +37,7 @@
     "Create_Limit_Cylinders": true,
     "Cylinder_Axial_Margin_mm": 1.0,
     "Finalize_Solid": true,
-    "Stitch_Tolerance_mm": 0.01,
+    "Stitch_Tolerance_mm": 0.1,
     "Hide_Created_Sketches": true,
     "Hoop": false,
     "Airfoil_Ring": false,
@@ -74,6 +74,7 @@
     "Loft_Distributed_Rails_Use_TE_Vertices": false,
     "Loft_Distributed_Rail_Placement": "uniform_chord",
     "Loft_Quality_Max_Wave_Angle_Deg": 0.2,
-    "Loft_Construction_Mode": "split_trailing_edge"
+    "Loft_Construction_Mode": "split_trailing_edge",
+    "Propeller_Orientation": "standard"
   }
 }

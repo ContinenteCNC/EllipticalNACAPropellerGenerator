@@ -7,7 +7,7 @@ A multilingual Autodesk Fusion add-in for generating complete parametric
 propellers with elliptical blade planforms and smoothly transitioning NACA
 4-digit airfoils.
 
-Current release: **v1.1.0**
+Current release: **v1.1.1**
 
 ## Features
 

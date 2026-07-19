@@ -358,5 +358,19 @@
   "progress.manual.stage_detail_complete": "Finalizing results and diagnostics.",
   "result.manual_generation_cancelled": "Manual generation was cancelled. Features already created were preserved for inspection.\n\n{detail}",
   "common.not_available": "not available",
-  "result.timeline_group_not_started": "Timeline grouping was not applicable because geometry creation had not started."
+  "result.timeline_group_not_started": "Timeline grouping was not applicable because geometry creation had not started.",
+  "ui.propeller_orientation": "Final propeller orientation (Propeller_Orientation)",
+  "ui.propeller_orientation_tooltip": "Rigidly reorients the completed assembly. It does not change Prop_Direction, Sweep_Angle, or pitch.",
+  "propeller_orientation.standard": "Standard — hub base at Z=0, spinner toward +Z",
+  "propeller_orientation.flipped_180": "Flipped 180° — boat-propeller orientation",
+  "feature.final_orientation_flipped": "Final orientation — 180° flip at Root_Length={root_length:.3f} mm",
+  "result.final_orientation_applied": "Final 180° orientation applied to {count} solid body/bodies.",
+  "result.final_orientation_fail": "Final propeller orientation was not completed.\nDetails: {detail}",
+  "result.loft_component_fail": "The split trailing-edge workflow failed during: {stage}. Partial features were preserved for inspection.\nDetails: {detail}",
+  "loft_stage.main_surface_loft": "main open-surface loft",
+  "loft_stage.trailing_edge_loft": "separate trailing-edge loft",
+  "loft_stage.surface_trim": "XY surface Trim before Stitch",
+  "loft_stage.surface_stitch": "surface Stitch",
+  "progress.manual.stage.orientation": "Applying final orientation",
+  "progress.manual.stage_detail_orientation": "Flipping the blade 180° around the Root_Length reference before the pattern, hub, and spinner are created."
 }
