@@ -36,13 +36,13 @@ add-ins do Autodesk Fusion e reinicie o programa.
 Windows:
 
 ```text
-%appdata%\Autodesk\Autodesk Fusion\API\AddIns
+%appdata%\Autodesk\Autodesk Fusion 360\API\AddIns
 ```
 
 macOS:
 
 ```text
-~/Library/Application Support/Autodesk/Autodesk Fusion/API/AddIns
+~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns
 ```
 
 A pasta, o arquivo Python principal e o manifesto usam o mesmo nome:
