@@ -7,7 +7,7 @@ Add-in multilíngue para Autodesk Fusion que gera hélices paramétricas
 completas, com planta elíptica e transições suaves entre aerofólios NACA de
 quatro dígitos.
 
-Versão atual: **v1.1.2**
+Versão atual: **v1.1.3**
 
 ## Recursos
 
@@ -42,7 +42,7 @@ Windows:
 macOS:
 
 ```text
-~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns
+~/Library/Application Support/Autodesk/Autodesk Fusion/API/AddIns
 ```
 
 A pasta, o arquivo Python principal e o manifesto usam o mesmo nome:
@@ -142,8 +142,11 @@ O `Hoop` retangular existente continua disponível como recurso independente.
 
 ### Organização da interface
 
-Os parâmetros estão agrupados por função. As famílias de anéis de ponta e
-spinners usam uma única caixa de ativação e um seletor de tipo, evitando gerar
+Os parâmetros estão agrupados por função. `Centerline` passa a aparecer junto
+dos controles principais de **Geometria da hélice**. O seletor de direção mostra
+`CW`/`CCW` em vez da convenção numérica interna; os JSONs continuam compatíveis
+com `Prop_Direction = +1` para CW e `-1` para CCW. As famílias de anéis de ponta
+e spinners usam uma única caixa de ativação e um seletor de tipo, evitando gerar
 alternativas sobrepostas na mesma execução. Os nomes existentes no JSON
 continuam compatíveis.
 
@@ -199,6 +202,11 @@ Elliptical NACA Propeller 02
 A mensagem final informa se o agrupamento funcionou, falhou ou foi ignorado. O
 evento global `commandTerminated` cria o grupo somente após o commit, evitando
 que o encerramento posterior do comando reverta visibilidades ou remova o grupo.
+O resumo final usa uma caixa de texto somente leitura com altura fixa e rolagem
+vertical automática, evitando que diagnósticos longos aumentem indefinidamente
+a janela. Se o Stitch falhar, o resumo informa a tolerância usada e recomenda
+aumentar a **Tolerância da costura**; se o Boundary Fill falhar, informa o
+overlap usado e recomenda aumentar a **Sobreposição de fronteira**.
 
 ### Componente ativo
 
@@ -298,6 +306,9 @@ plano XY antes da costura. A costura preserva a abertura inferior e o Boundary
 Fill usa a casca costurada, os cilindros interno/externo e o próprio plano XY
 para fechar a célula. O plano XY também é incluído quando não existe material
 abaixo de `Z=0`; nesse caso ele simplesmente não cria uma divisão adicional.
+O `Prop_Z_Offset` continua sendo aplicado mais tarde, depois que a base da pá já
+foi resolvida em `Z=0`; ele é um offset de montagem e não participa do Trim
+pré-Stitch.
 
 O modo de perfil fechado e o fluxo anterior de extensão, trims e costura foram
 mantidos como opções legadas em Construção avançada.

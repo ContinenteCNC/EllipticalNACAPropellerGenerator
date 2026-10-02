@@ -97,3 +97,16 @@ Use `"flipped_180"` to reproduce the final transform used by
 This is a rigid assembly transform and does not change `Prop_Direction`,
 `Sweep_Angle`, or geometric pitch. The validated default Stitch tolerance is
 `0.1 mm`.
+
+## Direction display in Fusion
+
+The dialog displays `Prop_Direction` as `CW` or `CCW`, but configuration files
+keep the original numeric convention for backward compatibility:
+
+```text
+CW  = +1
+CCW = -1
+```
+
+`Centerline` also keeps the same JSON key and meaning; only its position in the
+dialog changed to the Propeller Geometry group.

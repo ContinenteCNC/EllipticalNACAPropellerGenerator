@@ -19,7 +19,9 @@ At absolute shaft radius `r`:
 alpha = -Prop_Direction * atan(Blade_Pitch / (2*pi*r))
 ```
 
-The sign determines the handedness.
+The sign determines the handedness. The Fusion dialog presents this as
+`CW`/`CCW`, but the stored and internal convention remains `CW = +1` and
+`CCW = -1`.
 
 ## Ellipse-constrained chord
 
@@ -159,6 +161,8 @@ With `2m+1` rails, the leading edge is constrained and each surface receives
 `Prop_Direction` already multiplies the effective sweep sign, matching the
 OpenSCAD equations. Do not manually negate `Sweep_Angle` when changing
 `Prop_Direction`. `Propeller_Orientation` is independent. Its `flipped_180`
-mode is applied only after the assembly is complete and maps
-`(x, y, z)` to `(x, -y, Root_Length-z)`, reproducing
-`translate([0,0,Root_Length]) rotate([180,0,0])`. OpenSCAD `hublen` maps to `Root_Length` in this add-in.
+mode is applied to the first solid blade after Boundary Fill and before blade
+patterning, hub creation, and spinner creation. It maps `(x, y, z)` to
+`(x, -y, Root_Length-z)`, reproducing
+`translate([0,0,Root_Length]) rotate([180,0,0])`. OpenSCAD `hublen` maps to
+`Root_Length` in this add-in.

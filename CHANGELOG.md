@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.3 — 2026-10-02
+
+- Moved `Centerline` from Advanced Construction to Propeller Geometry without changing the stored JSON key or blade mathematics.
+- Replaced the `+1/-1` direction choices in the dialog with `CW/CCW`; internal and persisted `Prop_Direction` values remain numeric (`CW=+1`, `CCW=-1`) for backward compatibility.
+- Replaced the unbounded final message box with a fixed-height, read-only scrollable generation-summary dialog.
+- Added targeted recovery hints that report the value used and recommend increasing Stitch tolerance after a Stitch-stage failure or Boundary overlap after a Boundary Fill failure.
+- Kept the validated `0.1 mm` Boundary Fill diameter-overlap default and all existing geometry-generation equations unchanged.
+- Preserved the existing base-cut/offset sequence: `Cut_Below_Hub_Base` resolves the split surfaces at `Z=0` before Stitch, while `Prop_Z_Offset` remains a later assembly offset.
+- Corrected the documented Windows installation path to `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`.
+
 ## 1.1.2 — 2026-07-19
 
 - Added `examples/Examples.f3d`, an Autodesk Fusion document containing the models generated from all bundled configurations.

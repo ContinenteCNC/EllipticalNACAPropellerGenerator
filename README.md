@@ -7,7 +7,7 @@ A multilingual Autodesk Fusion add-in for generating complete parametric
 propellers with elliptical blade planforms and smoothly transitioning NACA
 4-digit airfoils.
 
-Current release: **v1.1.2**
+Current release: **v1.1.3**
 
 ## Features
 
@@ -41,7 +41,7 @@ Windows:
 macOS:
 
 ```text
-~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns
+~/Library/Application Support/Autodesk/Autodesk Fusion/API/AddIns
 ```
 
 The folder, Python entry file and manifest share the same base name:
@@ -141,10 +141,13 @@ The existing rectangular `Hoop` remains available as a separate feature.
 
 ### Interface organization
 
-The command groups related parameters by purpose. Tip-ring and spinner
-families each use one enable checkbox and one type selector, preventing
-overlapping alternatives from being generated in the same run. Existing JSON
-parameter names remain compatible.
+The command groups related parameters by purpose. `Centerline` is shown with
+the main **Propeller geometry** controls. The direction selector displays
+`CW`/`CCW` instead of the internal numeric convention; stored JSON remains
+backward compatible with `Prop_Direction = +1` for CW and `-1` for CCW.
+Tip-ring and spinner families each use one enable checkbox and one type
+selector, preventing overlapping alternatives from being generated in the same
+run. Existing JSON parameter names remain compatible.
 
 
 ### Automatic parameter persistence
@@ -198,7 +201,11 @@ Elliptical NACA Propeller 02
 The result message reports whether grouping succeeded, failed, or was skipped.
 Grouping is performed by the global `commandTerminated` handler after commit;
 this prevents later command cancellation from reverting visibility changes or
-removing the group.
+removing the group. The final summary is shown in a fixed-height, read-only text
+box with automatic vertical scrolling, so long diagnostic output no longer grows
+the dialog indefinitely. If Stitch fails, the summary reports the tolerance
+used and suggests increasing **Stitch tolerance**; if Boundary Fill fails, it
+reports the overlap used and suggests increasing **Boundary overlap**.
 
 ### Active component
 
@@ -294,6 +301,9 @@ vertices. When `Cut_Below_Hub_Base` is enabled, both source surfaces are
 trimmed together by the global XY plane before Stitch. Boundary Fill then uses
 the stitched open shell, the nominal inner/outer cylinders, and the XY plane.
 The XY plane is also included when there is no material below `Z=0`.
+`Prop_Z_Offset` is intentionally applied later, after the blade base has been
+resolved at global `Z=0`; it is an assembly offset and is not part of the
+pre-Stitch base trim.
 
 The closed-profile construction and the previous extend/trim/stitch workflow
 remain as legacy Advanced Construction options.

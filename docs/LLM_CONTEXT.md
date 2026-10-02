@@ -3,7 +3,7 @@
 ## Project identity
 
 - Name: Elliptical NACA Propeller Generator
-- Version: 1.1.2
+- Version: 1.1.3
 - Previous development name: `PropellerFlatSections`
 - Fusion add-in UUID: `e9d0f388-6b7d-4fb7-88fb-cdbba6743fd6`
 - Maintainer: Bruno Martins
@@ -152,6 +152,26 @@ min(20, 0.5 * Propeller_Diameter * Max_Chord_Fraction)
 ```
 
 
+
+## Version 1.1.3 interface and result-summary rules
+
+- `Centerline` belongs to **Propeller Geometry**, not Advanced Construction.
+  The stored key remains `Centerline`.
+- The direction dropdown displays `CW` and `CCW`, while the geometry and JSON
+  convention remains numeric: `CW = +1`, `CCW = -1`.
+- The final result is shown through a secondary command containing a read-only
+  `TextBoxCommandInput` with 12 visible rows. Fusion supplies a vertical scroll
+  bar automatically when the text is longer. The command is launched through a
+  custom event after the generating command has terminated, because starting a
+  second command directly from command-related events is unsupported.
+- A `surface_stitch` failure reports the actual Stitch tolerance used and
+  appends a recommendation to increase it. A Boundary Fill failure reports the
+  actual diameter overlap used and appends a recommendation to increase it.
+- Do not move `Prop_Z_Offset` earlier in the construction sequence in this
+  version. In split trailing-edge + Boundary Fill mode,
+  `Cut_Below_Hub_Base` trims the source surfaces at global `Z=0` before Stitch;
+  `Prop_Z_Offset` remains a later assembly offset.
+
 ## Version 0.21 dialog organization
 
 The visible groups are deliberately ordered as:
@@ -206,7 +226,7 @@ flush while the command remains active: later termination can otherwise revert
 visibility changes and delete the timeline group. Every unavailable or failed
 grouping path must be reported; never return silently.
 
-The visible command name is `<localized name> — v1.1.2`.
+The visible command name is `<localized name> — v1.1.3`.
 
 For timeline grouping, never use truthiness checks on `Design`, `Timeline`, or `TimelineGroup`. Use explicit `is None` and `isValid` checks so a valid empty timeline is not mistaken for a missing one.
 

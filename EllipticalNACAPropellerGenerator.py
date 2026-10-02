@@ -215,7 +215,7 @@ _t = _LOCALIZER.text
 ACTIVE_LOCALE = _LOCALIZER.locale_code
 
 PROJECT_NAME = "Elliptical NACA Propeller Generator"
-PROJECT_VERSION = "1.1.2"
+PROJECT_VERSION = "1.1.3"
 UPSTREAM_SOURCES = {
     "thingiverse": "https://www.thingiverse.com/thing:5300828",
     "printables": (
@@ -231,6 +231,12 @@ UPSTREAM_SOURCES = {
 CMD_ID = "bruno_elliptical_naca_propeller_generator_command"
 CMD_NAME = f"{_t('command.name')} — v{PROJECT_VERSION}"
 CMD_DESCRIPTION = _t("command.description")
+RESULT_SUMMARY_CMD_ID = (
+    "bruno_elliptical_naca_propeller_generator_result_summary"
+)
+RESULT_SUMMARY_EVENT_ID = (
+    "bruno_elliptical_naca_propeller_generator_show_result_summary"
+)
 WORKSPACE_ID = "FusionSolidEnvironment"
 PANEL_IDS = ("SolidCreatePanel", "SolidScriptsAddinsPanel")
 
@@ -243,6 +249,15 @@ DIALOG_INITIAL_HEIGHT = 620
 DIALOG_MINIMUM_WIDTH = 360
 DIALOG_MINIMUM_HEIGHT = 400
 
+# The final result uses a fixed-height read-only TextBoxCommandInput. Fusion
+# automatically adds a vertical scroll bar when the text exceeds numRows,
+# preventing long diagnostics from growing the dialog indefinitely.
+RESULT_SUMMARY_ROWS = 12
+RESULT_SUMMARY_INITIAL_WIDTH = 620
+RESULT_SUMMARY_INITIAL_HEIGHT = 420
+RESULT_SUMMARY_MINIMUM_WIDTH = 420
+RESULT_SUMMARY_MINIMUM_HEIGHT = 280
+
 # Fusion auto-sizes ProgressDialog to its longest message line. Keep every
 # manual-progress line short so a late diagnostic string cannot expand the
 # dialog to nearly the full screen width.
@@ -251,6 +266,8 @@ MANUAL_PROGRESS_MAX_DETAIL_LINES = 3
 
 _handlers: list[object] = []
 _control = None
+_result_summary_event = None
+_pending_result_summary_text = ""
 
 
 @dataclass(frozen=True)
@@ -842,6 +859,23 @@ def _selected_dropdown_name(
     return drop_down.selectedItem.name
 
 
+def _prop_direction_display(value: object) -> str:
+    """Map the backward-compatible numeric direction to a readable UI label."""
+    return "CW" if int(value) == 1 else "CCW"
+
+
+def _prop_direction_value(display_name: str) -> int:
+    """Map the CW/CCW UI selection back to the numeric geometry convention."""
+    normalized = str(display_name or "").strip().upper()
+    if normalized == "CW":
+        return 1
+    if normalized == "CCW":
+        return -1
+    raise ValueError(
+        f"Propeller direction must be CW or CCW, got {display_name!r}."
+    )
+
+
 def _collect_blade_config_overrides(
     inputs: adsk.core.CommandInputs,
     profile_points: int,
@@ -859,7 +893,7 @@ def _collect_blade_config_overrides(
             _string_input_value(inputs, "elenFraction"),
             "Elen_Fraction",
         ),
-        "Prop_Direction": int(
+        "Prop_Direction": _prop_direction_value(
             _selected_dropdown_name(inputs, "propDirection")
         ),
         "Centerline": _parse_float_text(
@@ -1978,7 +2012,7 @@ def _apply_config_to_dialog(
     _select_dropdown_item(
         inputs,
         "propDirection",
-        "+1" if int(config.get("Prop_Direction", -1)) == 1 else "-1",
+        _prop_direction_display(config.get("Prop_Direction", -1)),
     )
     _set_value_input_mm(
         inputs,
@@ -10839,8 +10873,22 @@ def _flush_pending_generation_result() -> bool:
             "incomplete": bool(pending["incomplete"]),
         },
     )
-    UI.messageBox(final_message)
+    _request_result_summary(final_message)
     return True
+
+
+def _request_result_summary(message: str) -> None:
+    """Queue the final summary for a bounded, scrollable command dialog."""
+    global _pending_result_summary_text
+
+    _pending_result_summary_text = str(message or "")
+    try:
+        if _result_summary_event is None:
+            raise RuntimeError("Result-summary custom event is unavailable.")
+        APP.fireCustomEvent(RESULT_SUMMARY_EVENT_ID)
+    except Exception:
+        # Preserve result visibility even if the secondary dialog cannot start.
+        UI.messageBox(_pending_result_summary_text)
 
 
 # =============================================================================
@@ -10850,6 +10898,72 @@ def _flush_pending_generation_result() -> bool:
 # Every handler instance is therefore appended to the module-level _handlers
 # list. Removing that retention causes apparently random command failures.
 # =============================================================================
+
+
+class ResultSummaryEventHandler(adsk.core.CustomEventHandler):
+    """Start the summary command only after Fusion returns to the idle queue."""
+
+    def notify(self, args):
+        try:
+            command_definition = UI.commandDefinitions.itemById(
+                RESULT_SUMMARY_CMD_ID
+            )
+            if not command_definition:
+                raise RuntimeError(
+                    "Result-summary command definition is unavailable."
+                )
+            if not command_definition.execute():
+                raise RuntimeError(
+                    "Fusion did not execute the result-summary command."
+                )
+        except Exception:
+            UI.messageBox(
+                _pending_result_summary_text
+                or _t(
+                    "error.timeline_post_commit",
+                    detail=traceback.format_exc(),
+                )
+            )
+
+
+class ResultSummaryCommandCreatedHandler(
+    adsk.core.CommandCreatedEventHandler
+):
+    """Create the fixed-height, read-only final summary dialog."""
+
+    def notify(self, args: adsk.core.CommandCreatedEventArgs):
+        global _pending_result_summary_text
+
+        try:
+            command = args.command
+            command.isRepeatable = False
+            command.isOKButtonVisible = True
+            command.okButtonText = _t("ui.close")
+            command.isExecutedWhenPreEmpted = False
+            command.setDialogInitialSize(
+                RESULT_SUMMARY_INITIAL_WIDTH,
+                RESULT_SUMMARY_INITIAL_HEIGHT,
+            )
+            command.setDialogMinimumSize(
+                RESULT_SUMMARY_MINIMUM_WIDTH,
+                RESULT_SUMMARY_MINIMUM_HEIGHT,
+            )
+
+            text_box = command.commandInputs.addTextBoxCommandInput(
+                "generationResultSummary",
+                "",
+                "",
+                RESULT_SUMMARY_ROWS,
+                True,
+            )
+            text_box.isFullWidth = True
+            text_box.text = _pending_result_summary_text
+            _pending_result_summary_text = ""
+        except Exception:
+            UI.messageBox(
+                _pending_result_summary_text
+                or traceback.format_exc()
+            )
 
 
 class CommandExecuteHandler(adsk.core.CommandEventHandler):
@@ -11278,6 +11392,16 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                                     detail=result.surface_loft_error,
                                 )
                             )
+                            if (
+                                result.surface_loft_failed_stage
+                                == "surface_stitch"
+                            ):
+                                lines.append(
+                                    _t(
+                                        "result.recommend_stitch_tolerance",
+                                        value=stitch_tolerance_mm,
+                                    )
+                                )
                         else:
                             lines.append(
                                 _t(
@@ -11369,6 +11493,12 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                                 _t(
                                     "result.boundary_fill_fail",
                                     detail=result.finalization_error,
+                                )
+                            )
+                            lines.append(
+                                _t(
+                                    "result.recommend_boundary_overlap",
+                                    value=result.boundary_overlap_diameter_mm,
                                 )
                             )
                     elif result.solid_created:
@@ -11650,7 +11780,7 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                 section_mode == MODE_WRAPPED
                 and robust_failed_before_geometry
             ):
-                UI.messageBox(result_message)
+                _request_result_summary(result_message)
                 timeline_group_request = None
             else:
                 _queue_generation_result(
@@ -11710,7 +11840,7 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                         "incomplete": True,
                     },
                 )
-                UI.messageBox(error_message)
+                _request_result_summary(error_message)
         except Exception:
             error_detail = traceback.format_exc()
             if manual_log_session is not None:
@@ -11765,7 +11895,7 @@ class CommandExecuteHandler(adsk.core.CommandEventHandler):
                         "incomplete": True,
                     },
                 )
-                UI.messageBox(error_message)
+                _request_result_summary(error_message)
         finally:
             if manual_progress is not None:
                 manual_progress.close()
@@ -12291,8 +12421,8 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 adsk.core.DropDownStyles.TextListDropDownStyle,
             )
             direction_default = int(raw_config["Prop_Direction"])
-            direction_input.listItems.add("-1", direction_default == -1)
-            direction_input.listItems.add("+1", direction_default == 1)
+            direction_input.listItems.add("CCW", direction_default == -1)
+            direction_input.listItems.add("CW", direction_default == 1)
 
             geometry_inputs.addValueInput(
                 "propZOffset",
@@ -12343,6 +12473,11 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 "sweepAngle",
                 _t("ui.sweep_angle"),
                 f"{float(raw_config['Sweep_Angle']):g}",
+            )
+            geometry_inputs.addStringValueInput(
+                "centerline",
+                _t("ui.centerline"),
+                f"{float(raw_config['Centerline']):g}",
             )
 
             # ---------------------------------------------------------------
@@ -12740,11 +12875,6 @@ class CommandCreatedHandler(adsk.core.CommandCreatedEventHandler):
                 "",
                 apply_angle_default,
             )
-            operations_inputs.addStringValueInput(
-                "centerline",
-                _t("ui.centerline"),
-                f"{float(raw_config['Centerline']):g}",
-            )
             operations_inputs.addBoolValueInput(
                 "createSurfaceLoft",
                 _t("ui.create_loft"),
@@ -13019,12 +13149,33 @@ def run(context):
     global _pending_timeline_run
     global _sample_catalog
     global _sample_discovery_errors
+    global _result_summary_event
+    global _pending_result_summary_text
 
     try:
         _pending_timeline_run = None
+        _pending_result_summary_text = ""
         _sample_catalog = {}
         _sample_discovery_errors = []
         _set_dialog_config_base(None)
+
+        # A custom event defers the secondary summary command until Fusion is
+        # idle. CommandDefinition.execute() is not supported directly from a
+        # command-related event such as commandTerminated.
+        try:
+            APP.unregisterCustomEvent(RESULT_SUMMARY_EVENT_ID)
+        except Exception:
+            pass
+        _result_summary_event = APP.registerCustomEvent(
+            RESULT_SUMMARY_EVENT_ID
+        )
+        if _result_summary_event is None:
+            raise RuntimeError(
+                "Could not register the result-summary custom event."
+            )
+        summary_event_handler = ResultSummaryEventHandler()
+        _result_summary_event.add(summary_event_handler)
+        _handlers.append(summary_event_handler)
 
         terminated_handler = CommandTerminatedHandler()
         UI.commandTerminated.add(terminated_handler)
@@ -13045,6 +13196,27 @@ def run(context):
         created_handler = CommandCreatedHandler()
         command_definition.commandCreated.add(created_handler)
         _handlers.append(created_handler)
+
+        summary_command_definition = command_definitions.itemById(
+            RESULT_SUMMARY_CMD_ID
+        )
+        if not summary_command_definition:
+            summary_command_definition = (
+                command_definitions.addButtonDefinition(
+                    RESULT_SUMMARY_CMD_ID,
+                    _t("result.summary_title"),
+                    _t("result.summary_title"),
+                    "",
+                )
+            )
+        else:
+            summary_command_definition.name = _t("result.summary_title")
+
+        summary_created_handler = ResultSummaryCommandCreatedHandler()
+        summary_command_definition.commandCreated.add(
+            summary_created_handler
+        )
+        _handlers.append(summary_created_handler)
 
         workspace = UI.workspaces.itemById(WORKSPACE_ID)
         panel = None
@@ -13071,9 +13243,12 @@ def stop(context):
     global _pending_timeline_run
     global _sample_catalog
     global _sample_discovery_errors
+    global _result_summary_event
+    global _pending_result_summary_text
 
     try:
         _pending_timeline_run = None
+        _pending_result_summary_text = ""
         _sample_catalog = {}
         _sample_discovery_errors = []
         _set_dialog_config_base(None)
@@ -13089,6 +13264,18 @@ def stop(context):
         command_definition = UI.commandDefinitions.itemById(CMD_ID)
         if command_definition:
             command_definition.deleteMe()
+
+        summary_command_definition = UI.commandDefinitions.itemById(
+            RESULT_SUMMARY_CMD_ID
+        )
+        if summary_command_definition:
+            summary_command_definition.deleteMe()
+
+        try:
+            APP.unregisterCustomEvent(RESULT_SUMMARY_EVENT_ID)
+        except Exception:
+            pass
+        _result_summary_event = None
 
         _control = None
         _handlers.clear()

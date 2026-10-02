@@ -73,10 +73,14 @@ captures the current timeline boundary, and creates geometry inside Fusion's
 command transaction. It queues the result rather than grouping immediately.
 
 The global `commandTerminated` handler is the primary post-commit step. It
-groups and collapses the committed contiguous timeline range and then displays
-the final message. Never flush while the command remains active: Fusion can
-otherwise revert visibility changes and remove the group when the transaction
-is later terminated.
+groups and collapses the committed contiguous timeline range, then queues the
+final summary through a custom event. The custom event executes a secondary
+command only when Fusion returns to the idle queue. That command contains a
+12-row read-only `TextBoxCommandInput`; Fusion automatically supplies vertical
+scrolling when the summary is longer. Do not execute the secondary command
+directly from a command-related event. Never flush while the generating command
+remains active: Fusion can otherwise revert visibility changes and remove the
+group when the transaction is later terminated.
 
 Timeline objects are tested explicitly for `None` and `isValid`; a first run can
 begin with a valid timeline whose item count is zero.
